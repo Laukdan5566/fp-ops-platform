@@ -61,6 +61,11 @@ for path in ("/helpdesk", "/helpdesk/new", "/helpdesk/contacts", "/helpdesk/remi
     response = http.get(path)
     assert response.status_code == 200, (path, response.get_data(as_text=True))
 
+menu_body = http.get("/helpdesk").get_data(as_text=True)
+assert "Relatórios e logs" in menu_body
+assert "Configurações do sistema" in menu_body
+assert "Zammad (legado)" in menu_body
+
 generated = http.post(
     "/helpdesk/settings/integration-token",
     data={"_csrf_token": "csrf-test", "nome": "Token descartavel"},

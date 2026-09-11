@@ -22,6 +22,8 @@
             background: #1f1f1f;
             color: white;
             transition: 0.3s;
+            overflow-y: auto;
+            scrollbar-color: #4b5563 #1f1f1f;
         }
 
         .sidebar-logo {
@@ -70,6 +72,41 @@
         .sidebar a.submenu-link::before {
             content: "↳ ";
             color: #ff7a00;
+        }
+
+        .sidebar details {
+            border-top: 1px solid #2d2d2d;
+        }
+
+        .sidebar summary {
+            color: #cbd5e1;
+            cursor: pointer;
+            list-style: none;
+            padding: 12px 20px;
+            transition: 0.2s;
+            user-select: none;
+        }
+
+        .sidebar summary::-webkit-details-marker { display: none; }
+
+        .sidebar summary::after {
+            content: "›";
+            float: right;
+            font-size: 1.15rem;
+            line-height: 1;
+            transition: transform 0.2s;
+        }
+
+        .sidebar details[open] summary {
+            background: #252525;
+            color: white;
+        }
+
+        .sidebar details[open] summary::after { transform: rotate(90deg); }
+
+        .sidebar summary:hover {
+            background: #2b2b2b;
+            color: white;
         }
 
         .content {
@@ -327,30 +364,33 @@
 
     <a href="/dashboard">Dashboard</a>
     <a href="/helpdesk">Helpdesk</a>
-    <a class="submenu-link" href="/helpdesk/new">Novo chamado</a>
-    <a class="submenu-link" href="/helpdesk/contacts">Contatos</a>
-    {% if session.tipo == "admin" %}
-    <a class="submenu-link" href="/helpdesk/reminders">Lembretes internos</a>
-    <a class="submenu-link" href="/helpdesk/settings">Integração Ticketz</a>
-    {% endif %}
     <a href="/disponibilidade">Disponibilidade</a>
-    <a href="/windows-events">Eventos Windows</a>
     <a href="/backups">Backups</a>
     <a href="/pfsense">pfSense Agent</a>
-    {% if session.tipo == "admin" %}
-    <a class="submenu-link" href="/pfsense/storage">Storage pfSense / FTP</a>
-    {% endif %}
     <a href="/">Clientes</a>
+
+    {% set reports_open = request.path.startswith('/windows-events') or request.path.startswith('/logs-nao-cadastrados') or request.path.startswith('/historico') or request.path.startswith('/status') %}
+    <details {% if reports_open %}open{% endif %}>
+        <summary>Relatórios e logs</summary>
+        <a class="submenu-link" href="/windows-events">Eventos Windows</a>
+        <a class="submenu-link" href="/logs-nao-cadastrados">Logs não cadastrados</a>
+        <a class="submenu-link" href="/historico">Histórico geral</a>
+        <a class="submenu-link" href="/status">Status do sistema</a>
+    </details>
+
     {% if session.tipo == "admin" %}
-    <a href="/email-config">Config E-mail</a>
-    {% endif %}
-    <a href="/logs-nao-cadastrados">Logs nao cadastrados</a>
-    <a href="/historico">Historico Geral</a>
-    <a href="/status">Status do Sistema</a>
-    {% if session.tipo == "admin" %}
-    <a href="/zammad-config">Config Zammad</a>
-    <a href="/api-keys">Agents / Chaves</a>
-    <a href="/admin">Administracao</a>
+    {% set settings_open = request.path.startswith('/helpdesk/contacts') or request.path.startswith('/helpdesk/reminders') or request.path.startswith('/helpdesk/settings') or request.path.startswith('/pfsense/storage') or request.path.startswith('/email-config') or request.path.startswith('/zammad-config') or request.path.startswith('/api-keys') or request.path.startswith('/admin') %}
+    <details {% if settings_open %}open{% endif %}>
+        <summary>Configurações do sistema</summary>
+        <a class="submenu-link" href="/helpdesk/contacts">Contatos do helpdesk</a>
+        <a class="submenu-link" href="/helpdesk/reminders">Lembretes internos</a>
+        <a class="submenu-link" href="/helpdesk/settings">Integração Ticketz</a>
+        <a class="submenu-link" href="/pfsense/storage">Storage pfSense / FTP</a>
+        <a class="submenu-link" href="/email-config">E-mail</a>
+        <a class="submenu-link" href="/zammad-config">Zammad (legado)</a>
+        <a class="submenu-link" href="/api-keys">Agents e chaves</a>
+        <a class="submenu-link" href="/admin">Administração</a>
+    </details>
     {% endif %}
 </div>
 
