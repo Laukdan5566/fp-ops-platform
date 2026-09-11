@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1">Helpdesk</h2>
+        <div class="text-muted">Chamados manuais, do monitoramento e do Ticketz.</div>
+    </div>
+    <a class="btn btn-primary" href="/helpdesk/new">Novo chamado</a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md"><div class="metric"><small>Ativos</small><div class="fs-3 fw-bold">{{ counts.active or 0 }}</div></div></div>
+    <div class="col-md"><div class="metric"><small>Novos</small><div class="fs-3 fw-bold text-danger">{{ counts.open or 0 }}</div></div></div>
+    <div class="col-md"><div class="metric"><small>Em atendimento</small><div class="fs-3 fw-bold text-primary">{{ counts.in_progress or 0 }}</div></div></div>
+    <div class="col-md"><div class="metric"><small>Aguardando cliente</small><div class="fs-3 fw-bold text-warning">{{ counts.waiting_customer or 0 }}</div></div></div>
+    <div class="col-md"><div class="metric"><small>Resolvidos</small><div class="fs-3 fw-bold text-success">{{ counts.resolved or 0 }}</div></div></div>
+</div>
+
+<form class="card card-body mb-3" method="get">
+    <div class="row g-2">
+        <div class="col-md-5"><input class="form-control" name="q" value="{{ search }}" placeholder="Número, assunto ou cliente"></div>
+        <div class="col-md-3">
+            <select class="form-select" name="status">
+                {% for value, label in [('active','Ativos'),('all','Todos'),('open','Novos'),('in_progress','Em atendimento'),('waiting_customer','Aguardando cliente'),('resolved','Resolvidos'),('closed','Fechados')] %}
+                <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" name="priority">
+                <option value="">Todas prioridades</option>
+                {% for value, label in [('critical','Crítica'),('high','Alta'),('normal','Normal'),('low','Baixa')] %}
+                <option value="{{ value }}" {% if selected_priority == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2"><button class="btn btn-outline-primary w-100">Filtrar</button></div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Chamado</th><th>Cliente</th><th>Assunto</th><th>Prioridade</th><th>Status</th><th>Responsável</th><th>Atualizado</th></tr></thead>
+            <tbody>
+            {% for ticket in tickets %}
+            <tr>
+                <td><a class="fw-bold text-decoration-none" href="/helpdesk/tickets/{{ ticket.id }}">{{ ticket.numero }}</a><div class="small text-muted">{{ ticket.origem }}</div></td>
+                <td>{{ ticket.cliente_nome or ticket.requester_name or 'Não vinculado' }}</td>
+                <td>{{ ticket.assunto }}</td>
+                <td><span class="badge {% if ticket.prioridade == 'critical' %}bg-danger{% elif ticket.prioridade == 'high' %}bg-warning text-dark{% elif ticket.prioridade == 'low' %}bg-secondary{% else %}bg-primary{% endif %}">{{ ticket.prioridade }}</span></td>
+                <td>{{ ticket.status }}</td>
+                <td>{{ ticket.assignee_name or 'Não atribuído' }}</td>
+                <td>{{ ticket.updated_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-5">Nenhum chamado encontrado.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

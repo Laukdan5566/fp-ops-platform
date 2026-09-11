@@ -1,0 +1,55 @@
+{
+  "monitor_url": "https://bkp.fpinformatica.com.br",
+  "api_key": "COLE_UMA_CHAVE_SEM_SERVIDOR_FIXO_OU_USE_API_KEY_EM_CADA_JOB",
+  "jobs": [
+    {
+      "servidor_log": "BORPLAST_DADOS",
+      "log_paths": [
+        "C:\\ProgramData\\IperiusBackup\\Logs"
+      ],
+      "patterns": [
+        "*.txt",
+        "*.log",
+        "*.html",
+        "*.htm"
+      ],
+      "include_patterns": [
+        "*DADOS*"
+      ],
+      "content_patterns": [
+        "*BORPLAST_DADOS*",
+        "*BORPLAST DADOS*"
+      ],
+      "exclude_patterns": []
+    },
+    {
+      "servidor_log": "BORPLAST_VV",
+      "log_paths": [
+        "C:\\ProgramData\\IperiusBackup\\Logs"
+      ],
+      "patterns": [
+        "*.txt",
+        "*.log",
+        "*.html",
+        "*.htm"
+      ],
+      "include_patterns": [
+        "*VV*"
+      ],
+      "content_patterns": [
+        "*BORPLAST_VV*",
+        "*BORPLAST VV*"
+      ],
+      "exclude_patterns": []
+    }
+  ],
+  "email_grace_minutes": 10,
+  "scan_interval_seconds": 30,
+  "heartbeat_interval_seconds": 300,
+  "recent_hours_on_start": 72,
+  "windows_event_monitoring_enabled": true,
+  "windows_event_recent_hours_on_start": 168,
+  "auto_update_enabled": true,
+  "state_path": "C:\\ProgramData\\BackupMonitorAgent\\state.json",
+  "log_path": "C:\\ProgramData\\BackupMonitorAgent\\agent.log"
+}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Servidores de {{ cliente.nome_exibicao }}</h2>
+
+{% if cliente.ativo == 1 %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="/clientes/{{cliente.id}}/agent-exe" class="btn btn-outline-primary btn-sm">Baixar agent EXE</a>
+    <a href="/clientes/{{cliente.id}}/agent-exe/legacy-ws2012" class="btn btn-outline-secondary btn-sm">Baixar EXE WS2012</a>
+    <a href="/clientes/{{cliente.id}}/agent-package" class="btn btn-outline-primary btn-sm">Baixar ZIP</a>
+    <a href="/clientes/{{cliente.id}}/agent-package/legacy-ws2012" class="btn btn-outline-secondary btn-sm">Baixar ZIP WS2012</a>
+</div>
+{% endif %}
+
+<!-- FORM NOVO SERVIDOR -->
+{% if session.tipo == "admin" %}
+<form method="post" action="/servidores/add/{{cliente.id}}" class="row g-2 mb-4">
+    <div class="col">
+        <input name="nome_log"
+               class="form-control"
+               placeholder="Nome do servidor no log"
+               required>
+    </div>
+
+    <div class="col">
+        <input type="number"
+               name="backups_semana"
+               class="form-control"
+               value="7"
+               min="1">
+    </div>
+
+    <div class="col-auto">
+        <button class="btn btn-primary">
+            ➕ Adicionar Servidor
+        </button>
+    </div>
+</form>
+{% endif %}
+
+<!-- TABELA -->
+<table class="table table-bordered table-striped align-middle">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nome Log</th>
+            <th>Backups/Semana</th>
+            <th>Status</th>
+            <th width="280">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+
+    {% for s in servidores %}
+        <tr>
+            <td>{{ s.id }}</td>
+
+            <td>
+                <a href="/servidor/{{ s.nome_log }}">
+                    {{ s.nome_log }}
+                </a>
+            </td>
+
+            <td>{{ s.backups_semana }}</td>
+
+            <td>
+                {% if s.ativo == 1 %}
+                    <span class="badge bg-success">Ativo</span>
+                {% else %}
+                    <span class="badge bg-secondary">Inativo</span>
+                {% endif %}
+            </td>
+
+            <td>
+                {% if session.tipo == "admin" %}
+
+                <!-- EDITAR -->
+                <a href="/servidores/editar/{{ s.id }}"
+                   class="btn btn-primary btn-sm">
+                    ⚙ Editar
+                </a>
+
+                <!-- ATIVAR/DESATIVAR -->
+                <a href="/servidores/toggle/{{s.id}}/{{cliente.id}}"
+                   class="btn btn-warning btn-sm">
+                    🔄 Ativar/Desativar
+                </a>
+
+                <!-- EXCLUIR -->
+                <a href="/servidores/delete/{{s.id}}/{{cliente.id}}"
+                   class="btn btn-danger btn-sm"
+                   onclick="return confirm('Tem certeza que deseja excluir este servidor?')">
+                    ❌ Excluir
+                </a>
+                {% else %}
+                    <span class="text-muted small">Somente leitura</span>
+                {% endif %}
+
+            </td>
+        </tr>
+    {% endfor %}
+
+    </tbody>
+</table>
+
+{% if not servidores %}
+<div class="alert alert-info">
+    Nenhum servidor cadastrado ainda.
+</div>
+{% endif %}
+
+{% endblock %}

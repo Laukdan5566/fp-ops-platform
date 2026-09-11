@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Historico do Servidor: {{ nome_log }}</h2>
+
+<table class="table table-bordered align-middle">
+    <thead class="table-light">
+        <tr>
+            <th>Data</th>
+            <th>Status</th>
+            <th>Resumo</th>
+            <th>Detalhes</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in logs %}
+        {% set conteudo = log.conteudo_raw or "" %}
+        <tr>
+            <td>{{ log.data_email }}</td>
+            <td>
+                {% if log.status == 'success' %}
+                    <span class="badge bg-success">Sucesso</span>
+                {% elif log.status == 'error' %}
+                    <span class="badge bg-danger">Erro</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark">Aviso</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if log.conteudo_raw is none %}
+                    <span class="text-muted">Log compactado</span>
+                {% elif "Backup finalizado com erros" in conteudo %}
+                    <span class="text-danger fw-bold">Backup com erro</span>
+                {% elif "Backup concluido com sucesso" in conteudo or "Backup concluído com sucesso" in conteudo %}
+                    <span class="text-success fw-bold">Backup OK</span>
+                {% else %}
+                    <span class="text-warning">Status nao identificado</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if log.conteudo_raw %}
+                    <button class="btn btn-sm btn-secondary" onclick="toggleLog('log{{ loop.index }}')">
+                        Ver Log
+                    </button>
+                    <div id="log{{ loop.index }}"
+                         style="display:none; margin-top:10px; max-height:400px; overflow:auto; background:#f8f9fa; padding:10px; border-radius:6px;">
+                        {{ conteudo | safe }}
+                    </div>
+                {% else %}
+                    <span class="text-muted small">Conteudo bruto removido pela retencao.</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+function toggleLog(id) {
+    var el = document.getElementById(id);
+    if (el.style.display === "none") {
+        el.style.display = "block";
+    } else {
+        el.style.display = "none";
+    }
+}
+</script>
+
+{% endblock %}

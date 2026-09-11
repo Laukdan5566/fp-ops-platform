@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1">pfSense Agent</h2>
+        <div class="text-muted">Monitoramento e backup criptografado de firewalls.</div>
+    </div>
+    {% if session.tipo == "admin" %}
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-primary" href="/pfsense/storage">Armazenamento FTP</a>
+        <a class="btn btn-primary" href="/pfsense/new">Cadastrar firewall</a>
+    </div>
+    {% endif %}
+</div>
+
+{% if message %}<div class="alert alert-info">{{ message }}</div>{% endif %}
+
+{% if storage %}
+<div class="alert {{ 'alert-success' if storage.active and storage.last_status == 'success' else 'alert-secondary' }} d-flex justify-content-between align-items-center">
+    <div>
+        <strong>Armazenamento remoto:</strong> {{ storage.protocol|upper }} em {{ storage.host }}:{{ storage.port }}{{ storage.remote_dir }}
+        — {{ 'ativo' if storage.active else 'desativado' }}
+    </div>
+    {% if storage.last_status %}<span class="badge {{ 'bg-success' if storage.last_status == 'success' else 'bg-danger' }}">{{ storage.last_status }}</span>{% endif %}
+</div>
+{% endif %}
+
+{% if firewalls %}
+<div class="row g-3">
+    {% for firewall in firewalls %}
+    <div class="col-xl-4 col-md-6">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h5 class="mb-1">{{ firewall.name }}</h5>
+                        <code>{{ firewall.address }}:{{ firewall.ssh_port }}</code>
+                    </div>
+                    {% if firewall.last_status == "online" %}
+                        <span class="badge bg-success">online</span>
+                    {% elif firewall.last_status == "error" %}
+                        <span class="badge bg-danger">erro</span>
+                    {% else %}
+                        <span class="badge bg-secondary">aguardando</span>
+                    {% endif %}
+                </div>
+                <hr>
+                <div><strong>Ultima verificacao:</strong> {{ firewall.last_check_at or "-" }}</div>
+                <div><strong>Ultimo backup:</strong> {{ firewall.last_backup_at or "-" }}</div>
+                <div><strong>Backups:</strong> {{ firewall.backup_count }}</div>
+                {% if firewall.latest_check %}
+                <div><strong>Latencia:</strong> {{ firewall.latest_check.latency_ms or 0 }} ms</div>
+                {% endif %}
+                {% if firewall.last_error %}
+                <div class="alert alert-danger py-2 mt-3 mb-0 small">{{ firewall.last_error }}</div>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-white d-flex gap-2">
+                <a class="btn btn-sm btn-outline-primary" href="/pfsense/{{ firewall.id }}">Detalhes</a>
+                {% if session.tipo == "admin" %}
+                <a class="btn btn-sm btn-outline-secondary" href="/pfsense/{{ firewall.id }}/edit">Editar</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">Nenhum pfSense cadastrado.</div>
+{% endif %}
+
+{% endblock %}

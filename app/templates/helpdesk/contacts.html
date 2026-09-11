@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h2>Contatos</h2><div class="text-muted">Destinatários e solicitantes do helpdesk.</div></div><a href="/helpdesk" class="btn btn-outline-secondary">Voltar</a></div>
+{% if session.tipo == 'admin' %}
+<form method="post" action="/helpdesk/contacts" class="card card-body mb-3">
+    <input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}">
+    <div class="row g-2">
+        <div class="col-md-3"><select class="form-select" name="cliente_id" required><option value="">Cliente</option>{% for c in clientes %}<option value="{{ c.id }}">{{ c.nome_exibicao }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><input class="form-control" name="nome" placeholder="Nome" required></div>
+        <div class="col-md-2"><input class="form-control" name="telefone" placeholder="WhatsApp com DDI"></div>
+        <div class="col-md-2"><input class="form-control" type="email" name="email" placeholder="E-mail"></div>
+        <div class="col-md-2"><input class="form-control" name="cargo" placeholder="Cargo/setor"></div>
+        <div class="col-md-1"><button class="btn btn-primary w-100">Adicionar</button></div>
+        <div class="col-12"><label><input type="checkbox" name="whatsapp_enabled" value="1" checked> Autorizado a receber notificações por WhatsApp</label></div>
+    </div>
+</form>
+{% endif %}
+<div class="card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Cliente</th><th>Contato</th><th>WhatsApp</th><th>E-mail</th><th>Notificações</th><th>Status</th><th></th></tr></thead><tbody>
+{% for c in contacts %}<tr><td>{{ c.cliente_nome or '-' }}</td><td><strong>{{ c.nome }}</strong><div class="small text-muted">{{ c.cargo or '' }}</div></td><td>{{ c.telefone or '-' }}</td><td>{{ c.email or '-' }}</td><td>{% if c.whatsapp_enabled %}<span class="badge bg-success">Autorizado</span>{% else %}<span class="badge bg-secondary">Desativado</span>{% endif %}</td><td>{% if c.ativo %}Ativo{% else %}Inativo{% endif %}</td><td>{% if session.tipo == 'admin' %}<form method="post" action="/helpdesk/contacts/{{ c.id }}/toggle"><input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}"><button class="btn btn-sm btn-outline-secondary">Ativar/desativar</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nenhum contato cadastrado.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

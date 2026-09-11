@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnóstico de Internet - {{ firewall.name }}</title>
+<style>
+body{font-family:Arial,sans-serif;color:#172033;margin:28px;line-height:1.35}.head{border-bottom:4px solid #ff7a00;padding-bottom:14px;margin-bottom:22px}.muted{color:#64748b}.actions{float:right}button,a.button{background:#ff7a00;border:0;border-radius:5px;color:white;padding:9px 14px;text-decoration:none;cursor:pointer}table{border-collapse:collapse;width:100%;margin:14px 0 28px}th,td{border:1px solid #dbe1e8;padding:8px;text-align:left;vertical-align:top}th{background:#f2f4f7}.score{font-size:26px;font-weight:bold}.good{color:#16803b}.warn{color:#b45309}.bad{color:#c62828}.card{border:1px solid #dbe1e8;border-left:5px solid #ff7a00;border-radius:5px;padding:14px;margin:16px 0}.diagnostic{margin:5px 0}@media print{.actions{display:none}body{margin:12mm}table{font-size:10px;page-break-inside:auto}tr{page-break-inside:avoid}.card{page-break-inside:avoid}}
+</style></head><body>
+<div class="actions"><button onclick="window.print()">Imprimir / salvar PDF</button> <a class="button" href="/pfsense/{{ firewall.id }}">Voltar</a></div>
+<div class="head"><h1>Diagnóstico comparativo de Internet</h1><div><strong>{{ firewall.name }}</strong> · período de {{ days }} dias</div><div class="muted">Gerado em {{ generated_at }}</div></div>
+
+{% if best %}<div class="card"><strong>Melhor resultado geral:</strong> {{ best.provider }} — {{ best.name }} <span class="score">{{ best.score }}</span>/100.<br><span class="muted">A nota combina disponibilidade, entrega da banda contratada e latência. Ela serve como triagem técnica e deve ser interpretada junto ao contrato/SLA da operadora.</span></div>{% endif %}
+
+<table><thead><tr><th>Link</th><th>Contrato</th><th>Disponibilidade</th><th>Latência/perda</th><th>Download</th><th>Upload</th><th>Entrega</th><th>Nota</th></tr></thead><tbody>
+{% for link in links %}<tr>
+<td><strong>{{ link.provider }}</strong><br>{{ link.name }}<br><span class="muted">{{ 'Dedicado full' if link.link_type == 'dedicated' else 'Banda larga' }} · {{ link.interface_key }}</span></td>
+<td>↓ {{ link.contracted_down_mbps or '-' }} / ↑ {{ link.contracted_up_mbps or '-' }} Mbps</td>
+<td>{{ ("%.2f"|format(link.availability)) ~ '%' if link.availability is not none else '-' }}<br><span class="muted">{{ link.probe_online }}/{{ link.probe_total }} sondas OK</span></td>
+<td>{{ link.latency_avg ~ ' ms' if link.latency_avg is not none else '-' }}<br>Perda {{ link.loss_avg ~ '%' if link.loss_avg is not none else '-' }}</td>
+<td>Média {{ link.download_avg or '-' }} Mbps<br><span class="muted">mín {{ link.download_min or '-' }} · máx {{ link.download_max or '-' }}</span></td>
+<td>Média {{ link.upload_avg or '-' }} Mbps<br><span class="muted">mín {{ link.upload_min or '-' }} · máx {{ link.upload_max or '-' }}</span></td>
+<td>↓ {{ link.delivery_down_avg ~ '%' if link.delivery_down_avg is not none else '-' }}<br>↑ {{ link.delivery_up_avg ~ '%' if link.delivery_up_avg is not none else '-' }}</td>
+<td><span class="score">{{ link.score if link.score is not none else '-' }}</span></td>
+</tr>{% else %}<tr><td colspan="8">Nenhum link cadastrado.</td></tr>{% endfor %}
+</tbody></table>
+
+<h2>Diagnóstico em linguagem direta</h2>
+{% for link in links %}<div class="card"><h3>{{ link.provider }} — {{ link.name }}</h3>{% for diagnostic in link.diagnostics %}<div class="diagnostic">• {{ diagnostic }}</div>{% endfor %}</div>{% endfor %}
+
+<p class="muted">Speedtests consomem banda e representam a capacidade observada no momento da medição. Resultados podem variar conforme congestionamento, servidor escolhido e uso simultâneo da conexão.</p>
+</body></html>

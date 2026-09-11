@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Histórico Geral de Backups</h2>
+
+<form method="GET" class="row g-3 mb-4">
+
+    <div class="col-md-3">
+        <label>Servidor</label>
+        <select name="servidor" class="form-select">
+            <option value="">Todos</option>
+            {% for s in servidores %}
+                <option value="{{ s.nome_log }}"
+                    {% if s.nome_log == servidor_filtro %}selected{% endif %}>
+                    {{ s.nome_log }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-3">
+        <label>Data Início</label>
+        <input type="date" name="inicio" value="{{ inicio }}" class="form-control">
+    </div>
+
+    <div class="col-md-3">
+        <label>Data Fim</label>
+        <input type="date" name="fim" value="{{ fim }}" class="form-control">
+    </div>
+
+    <div class="col-md-3 align-self-end">
+        <button class="btn btn-primary w-100">Filtrar</button>
+    </div>
+
+</form>
+
+<table class="table table-bordered table-sm">
+    <tr>
+        <th>Data</th>
+        <th>Cliente</th>
+        <th>Servidor</th>
+        <th>Status</th>
+        <th>Detalhes</th>
+    </tr>
+
+    {% for log in logs %}
+    <tr>
+        <td>{{ log.data_email }}</td>
+        <td>{{ log.nome_exibicao }}</td>
+        <td>{{ log.nome_log }}</td>
+        <td>
+            {% if log.status == "success" %}
+                <span class="badge bg-success">Sucesso</span>
+            {% elif log.status == "error" %}
+                <span class="badge bg-danger">Erro</span>
+            {% else %}
+                <span class="badge bg-warning text-dark">Aviso</span>
+            {% endif %}
+        </td>
+        <td>
+            <a href="/servidor/{{ log.nome_log }}" class="btn btn-sm btn-secondary">
+                Ver Histórico
+            </a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% if not logs %}
+<div class="alert alert-info">
+    Nenhum registro encontrado.
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Novo chamado</h2><a href="/helpdesk" class="btn btn-outline-secondary">Voltar</a>
+</div>
+<form method="post" action="/helpdesk/tickets" class="card card-body">
+    <input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Cliente</label><select class="form-select" name="cliente_id"><option value="">Não vinculado</option>{% for c in clientes %}<option value="{{ c.id }}">{{ c.nome_exibicao }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Contato solicitante</label><select class="form-select" name="requester_contact_id"><option value="">Sem contato</option>{% for c in contatos %}<option value="{{ c.id }}">{{ c.nome }}{% if c.telefone %} · {{ c.telefone }}{% endif %}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Servidor</label><select class="form-select" name="servidor_id"><option value="">Nenhum</option>{% for s in servidores %}<option value="{{ s.id }}">{{ s.nome_log }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">pfSense</label><select class="form-select" name="pfsense_firewall_id"><option value="">Nenhum</option>{% for f in firewalls %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-8"><label class="form-label">Assunto</label><input class="form-control" name="assunto" maxlength="200" required></div>
+        <div class="col-md-2"><label class="form-label">Categoria</label><select class="form-select" name="categoria">{% for value, label in [('support','Suporte'),('backup','Backup'),('server','Servidor'),('pfsense','pfSense'),('internet','Internet'),('windows','Windows'),('other','Outro')] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label">Prioridade</label><select class="form-select" name="prioridade"><option value="low">Baixa</option><option value="normal" selected>Normal</option><option value="high">Alta</option><option value="critical">Crítica</option></select></div>
+        <div class="col-12"><label class="form-label">Descrição</label><textarea class="form-control" name="descricao" rows="7" maxlength="10000" required></textarea></div>
+        <div class="col-12 text-end"><button class="btn btn-primary">Abrir chamado</button></div>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+    <h2 class="mb-0">Dashboard - Monitoramento Diario</h2>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-primary btn-sm" href="/backups">Ver backups</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/disponibilidade">Ver agents</a>
+    </div>
+</div>
+
+<p class="text-muted">
+Referente ao dia: <strong>{{ data_ref }}</strong>
+</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="metric">
+            <small>OK</small>
+            <strong class="text-success fs-4">{{ resumo.ok if resumo else 0 }}</strong>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric">
+            <small>Com erro</small>
+            <strong class="text-danger fs-4">{{ resumo.erro if resumo else 0 }}</strong>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric">
+            <small>Nao recebido</small>
+            <strong class="text-warning fs-4">{{ resumo.nao_recebido if resumo else 0 }}</strong>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric">
+            <small>Nao programado</small>
+            <strong class="text-secondary fs-4">{{ resumo.nao_programado if resumo else 0 }}</strong>
+        </div>
+    </div>
+</div>
+
+{% if ultimo_worker %}
+<div class="alert {% if ultimo_worker.status == 'success' %}alert-success{% elif ultimo_worker.status == 'running' %}alert-info{% else %}alert-warning{% endif %}">
+    Worker: <strong>{{ ultimo_worker.status }}</strong>
+    iniciado em {{ ultimo_worker.started_at }}
+    {% if ultimo_worker.finished_at %}e finalizado em {{ ultimo_worker.finished_at }}{% endif %}.
+    {% if ultimo_worker.detalhe %}<br>{{ ultimo_worker.detalhe }}{% endif %}
+</div>
+{% endif %}
+
+{% if data %}
+<table class="table table-bordered table-hover align-middle">
+    <thead class="table-light">
+        <tr>
+            <th style="width: 25%;">Cliente</th>
+            <th style="width: 25%;">Servidor</th>
+            <th style="width: 20%;">Status</th>
+            <th>Detalhe</th>
+        </tr>
+    </thead>
+    <tbody>
+
+    {% for row in data %}
+    <tr>
+        <td>{{ row.nome_exibicao }}</td>
+
+        <td>
+            <a href="/servidor/{{ row.nome_log }}">
+                {{ row.nome_log }}
+            </a>
+        </td>
+
+        <td>
+            {% if row.status == "erro" %}
+                <span class="badge bg-danger">Erro</span>
+
+            {% elif row.status == "nao_recebido" %}
+                <span class="badge bg-warning text-dark">Nao Recebido</span>
+
+            {% elif row.status == "nao_programado" %}
+                <span class="badge bg-secondary">Nao Programado</span>
+
+            {% else %}
+                <span class="badge bg-dark">Sem Registro</span>
+            {% endif %}
+        </td>
+
+        <td>
+            {{ row.detalhe if row.detalhe else "-" }}
+        </td>
+    </tr>
+    {% endfor %}
+
+    </tbody>
+</table>
+
+{% else %}
+<div class="alert alert-success mt-3">
+    Nenhum problema encontrado.
+</div>
+{% endif %}
+
+{% endblock %}

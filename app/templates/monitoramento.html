@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Monitoramento Diário</h2>
+
+<table class="table table-bordered">
+<tr>
+    <th>Data</th>
+    <th>Cliente</th>
+    <th>Servidor</th>
+    <th>Status</th>
+    <th>Detalhe</th>
+</tr>
+
+{% for r in registros %}
+<tr>
+    <td>{{ r.data_referencia }}</td>
+    <td>{{ r.nome_exibicao }}</td>
+    <td>{{ r.nome_log }}</td>
+    <td>
+        {% if r.status == "ok" %}
+            <span class="badge bg-success">OK</span>
+        {% elif r.status == "erro" %}
+            <span class="badge bg-danger">Erro</span>
+        {% elif r.status == "nao_recebido" %}
+            <span class="badge bg-warning text-dark">Não Recebido</span>
+        {% else %}
+            <span class="badge bg-secondary">Não Programado</span>
+        {% endif %}
+    </td>
+    <td>{{ r.detalhe }}</td>
+</tr>
+{% endfor %}
+</table>
+
+{% endblock %}

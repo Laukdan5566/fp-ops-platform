@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>{{ "Editar link de Internet" if link else "Cadastrar link de Internet" }}</h2>
+<p class="text-muted">Informe o plano contratado para que o diagnóstico compare entrega real e contrato.</p>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<form method="post" action="{{ '/pfsense/' ~ firewall.id ~ '/links/' ~ link.id ~ '/update' if link else '/pfsense/' ~ firewall.id ~ '/links/add' }}" class="card shadow-sm">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4"><label class="form-label">Nome do link</label><input name="name" class="form-control" required value="{{ link.name if link else '' }}" placeholder="Internet principal"></div>
+            <div class="col-md-4"><label class="form-label">Operadora</label><input name="provider" class="form-control" required value="{{ link.provider if link else '' }}" placeholder="Vivo, Oi, Sumicity..."></div>
+            <div class="col-md-4"><label class="form-label">Tipo</label><select name="link_type" class="form-select"><option value="broadband" {% if not link or link.link_type == 'broadband' %}selected{% endif %}>Banda larga</option><option value="dedicated" {% if link and link.link_type == 'dedicated' %}selected{% endif %}>Dedicado full</option></select></div>
+
+            <div class="col-md-4"><label class="form-label">Interface lógica</label><input name="interface_key" class="form-control font-monospace" required value="{{ link.interface_key if link else '' }}" placeholder="wan ou opt2"></div>
+            <div class="col-md-4"><label class="form-label">Dispositivo FreeBSD</label><input name="device_name" class="form-control font-monospace" required value="{{ link.device_name if link else '' }}" placeholder="vtnet1 ou pppoe1"></div>
+            <div class="col-md-4"><label class="form-label">Gateway</label><input name="gateway_name" class="form-control font-monospace" value="{{ link.gateway_name if link else '' }}" placeholder="WAN_OPERADORA_DHCP"></div>
+
+            <div class="col-md-4"><label class="form-label">Download contratado (Mbps)</label><input name="contracted_down_mbps" type="number" min="0.01" max="100000" step="0.01" class="form-control" required value="{{ link.contracted_down_mbps if link and link.contracted_down_mbps else '' }}" placeholder="600"></div>
+            <div class="col-md-4"><label class="form-label">Upload contratado (Mbps)</label><input name="contracted_up_mbps" type="number" min="0.01" max="100000" step="0.01" class="form-control" required value="{{ link.contracted_up_mbps if link and link.contracted_up_mbps else '' }}" placeholder="300 ou 600 para full"></div>
+            <div class="col-md-4"><label class="form-label">Entrega mínima esperada (%)</label><input name="minimum_delivery_percent" type="number" min="1" max="100" class="form-control" value="{{ link.minimum_delivery_percent if link and link.minimum_delivery_percent else 80 }}"></div>
+
+            <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="probe_enabled" id="probe_enabled" {% if not link or link.probe_enabled %}checked{% endif %}><label class="form-check-label" for="probe_enabled">Monitorar latência e perda</label></div></div>
+            <div class="col-md-6"><label class="form-label">Sonda leve a cada (minutos)</label><input name="probe_interval_minutes" type="number" min="1" max="1440" class="form-control" value="{{ link.probe_interval_minutes if link and link.probe_interval_minutes else 5 }}"></div>
+            <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="speedtest_enabled" id="speedtest_enabled" {% if link and link.speedtest_enabled %}checked{% endif %}><label class="form-check-label" for="speedtest_enabled">Executar speedtest periódico neste link</label><div class="form-text">Ative depois de preencher e revisar a banda contratada.</div></div></div>
+            <div class="col-md-6"><label class="form-label">Speedtest a cada (horas)</label><input name="speedtest_interval_hours" type="number" min="1" max="168" class="form-control" value="{{ link.speedtest_interval_hours if link and link.speedtest_interval_hours else 6 }}"></div>
+            <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="active" id="active" {% if not link or link.active %}checked{% endif %}><label class="form-check-label" for="active">Link ativo</label></div></div>
+        </div>
+    </div>
+    <div class="card-footer bg-white d-flex gap-2"><button class="btn btn-primary">Salvar link</button><a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}">Cancelar</a></div>
+</form>
+
+{% endblock %}

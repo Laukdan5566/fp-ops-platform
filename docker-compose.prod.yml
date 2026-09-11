@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: backup-monitor-prod-postgres
+    restart: always
+    shm_size: "256m"
+    mem_limit: 2g
+    pids_limit: 200
+    stop_grace_period: 1m
+    environment:
+      POSTGRES_DB: backup_monitor
+      POSTGRES_USER: backup_monitor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ${POSTGRES_DATA_DIR:-/var/lib/backup-monitor/postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backup_monitor -d backup_monitor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  web:
+    build: .
+    container_name: backup-monitor-prod-web
+    restart: always
+    user: "1000:1000"
+    init: true
+    mem_limit: 512m
+    pids_limit: 100
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5050:5000"
+    volumes:
+      - ./data:/data
+      - /home/fp/.secrets/backup-monitor-credential.keys:/run/secrets/backup_monitor_credential_keys:ro
+      - /home/fp/.secrets/backup-monitor-backup.keys:/run/secrets/backup_monitor_backup_keys:ro
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  worker:
+    build: .
+    container_name: backup-monitor-prod-worker
+    restart: always
+    user: "1000:1000"
+    init: true
+    mem_limit: 512m
+    pids_limit: 100
+    command: python worker/worker.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+      - /home/fp/.secrets/backup-monitor-credential.keys:/run/secrets/backup_monitor_credential_keys:ro
+      - /home/fp/.secrets/backup-monitor-backup.keys:/run/secrets/backup_monitor_backup_keys:ro
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "for f in /proc/[0-9]*/cmdline; do grep -aq 'worker/worker.py' $$f && exit 0; done; exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

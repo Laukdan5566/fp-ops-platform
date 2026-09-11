@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Config Zammad</h2>
+
+<form method="post" action="/zammad-config/save" class="card p-4 mb-4">
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" name="ativo" id="ativo"
+               {% if config and config.ativo %}checked{% endif %}>
+        <label class="form-check-label" for="ativo">Integracao ativa</label>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">URL do Zammad</label>
+            <input name="base_url" class="form-control"
+                   placeholder="https://zammad.seudominio.com.br"
+                   value="{{ config.base_url if config else '' }}">
+        </div>
+
+        <div class="col-md-6">
+            <label class="form-label">Token</label>
+            <input name="token" type="password" class="form-control"
+                   placeholder="{% if config and config.tem_token %}Token ja cadastrado{% else %}Token de acesso do Zammad{% endif %}">
+            {% if config and config.tem_token %}
+                <small class="text-muted">Deixe em branco para manter o token atual.</small>
+            {% endif %}
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Grupo Zammad</label>
+            <input name="grupo" class="form-control"
+                   placeholder="Users"
+                   value="{{ config.grupo if config else '' }}">
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Cliente / e-mail</label>
+            <input name="customer_email" type="email" class="form-control"
+                   placeholder="suporte@seudominio.com.br"
+                   value="{{ config.customer_email if config else '' }}">
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Prioridade backups</label>
+            <input name="prioridade" class="form-control"
+                   value="{{ config.prioridade if config else '2 normal' }}">
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Prioridade agent offline</label>
+            <input name="prioridade_agent_offline" class="form-control"
+                   value="{{ config.prioridade_agent_offline if config and config.prioridade_agent_offline else '3 high' }}">
+        </div>
+    </div>
+
+    <div class="form-check mt-3">
+        <input class="form-check-input" type="checkbox" name="criar_chamado_erro" id="criar_chamado_erro"
+               {% if not config or config.criar_chamado_erro %}checked{% endif %}>
+        <label class="form-check-label" for="criar_chamado_erro">
+            Abrir chamado ao detectar 3 backups com erro seguidos
+        </label>
+    </div>
+
+    <div class="form-check mt-2">
+        <input class="form-check-input" type="checkbox" name="criar_chamado_nao_recebido" id="criar_chamado_nao_recebido"
+               {% if not config or config.criar_chamado_nao_recebido %}checked{% endif %}>
+        <label class="form-check-label" for="criar_chamado_nao_recebido">
+            Abrir chamado ao detectar 3 backups esperados sem recebimento
+        </label>
+    </div>
+
+    <div class="row g-3 align-items-end mt-1">
+        <div class="col-md-8">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="criar_chamado_agent_offline" id="criar_chamado_agent_offline"
+                       {% if config and config.criar_chamado_agent_offline %}checked{% endif %}>
+                <label class="form-check-label" for="criar_chamado_agent_offline">
+                    Abrir chamado quando agent ficar offline
+                </label>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Tolerancia offline (min)</label>
+            <input name="agent_offline_minutos" type="number" min="5" class="form-control"
+                   value="{{ config.agent_offline_minutos if config and config.agent_offline_minutos else 15 }}">
+        </div>
+    </div>
+
+    <div class="form-check mt-2">
+        <input class="form-check-input" type="checkbox" name="fechar_chamado_agent_online" id="fechar_chamado_agent_online"
+               {% if not config or config.fechar_chamado_agent_online %}checked{% endif %}>
+        <label class="form-check-label" for="fechar_chamado_agent_online">
+            Fechar automaticamente o chamado quando o agent voltar online
+        </label>
+    </div>
+
+    <div class="mt-4">
+        <button class="btn btn-primary">Salvar</button>
+    </div>
+</form>
+
+<h3>Ultimos envios</h3>
+
+{% if alertas %}
+<table class="table table-bordered table-hover align-middle">
+    <thead class="table-light">
+        <tr>
+            <th>Data</th>
+            <th>Servidor</th>
+            <th>Tipo</th>
+            <th>Status envio</th>
+            <th>Ticket</th>
+            <th>Erro</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for alerta in alertas %}
+        <tr>
+            <td>{{ alerta.created_at }}</td>
+            <td>{{ alerta.servidor_log }}</td>
+            <td>{{ alerta.status_backup }}</td>
+            <td>
+                {% if alerta.status_envio == "success" %}
+                    <span class="badge bg-success">success</span>
+                {% else %}
+                    <span class="badge bg-danger">{{ alerta.status_envio }}</span>
+                {% endif %}
+            </td>
+            <td>{{ alerta.zammad_ticket_number or alerta.zammad_ticket_id or "-" }}</td>
+            <td class="text-muted">{{ alerta.erro or "-" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="alert alert-info">Nenhum envio ao Zammad registrado ainda.</div>
+{% endif %}
+
+{% endblock %}

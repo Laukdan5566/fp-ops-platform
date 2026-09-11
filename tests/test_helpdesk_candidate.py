@@ -1,0 +1,158 @@
+import hashlib
+import os
+import tempfile
+from pathlib import Path
+
+from cryptography.fernet import Fernet
+
+
+temp_dir = Path(tempfile.mkdtemp(prefix="fp-ops-helpdesk-test-"))
+key_file = temp_dir / "credential.keys"
+key_file.write_bytes(Fernet.generate_key() + b"\n")
+os.environ["SECRET_KEY"] = "test-only-session-secret"
+os.environ.setdefault("DATABASE_URL", "")
+os.environ.setdefault("DB_PATH", str(temp_dir / "test.db"))
+os.environ["CREDENTIAL_KEY_FILE"] = str(key_file)
+
+from db import get_db
+from main import app, hash_password
+from secret_store import encrypt_secret
+
+
+db = get_db()
+user_id = db.execute(
+    "INSERT INTO usuarios (username, senha_hash, tipo, ativo) VALUES (?, ?, 'admin', 1)",
+    ("test-admin", hash_password("unused")),
+).lastrowid
+client_id = db.execute(
+    "INSERT INTO clientes (nome_exibicao, ativo) VALUES (?, 1)", ("Cliente Teste",)
+).lastrowid
+contact_id = db.execute(
+    """
+    INSERT INTO cliente_contatos (cliente_id, nome, telefone, whatsapp_enabled, ativo)
+    VALUES (?, 'Contato Teste', '5511999999999', 1, 1)
+    """,
+    (client_id,),
+).lastrowid
+db.commit()
+db.close()
+
+http = app.test_client()
+with http.session_transaction() as sess:
+    sess["user_id"] = user_id
+    sess["username"] = "test-admin"
+    sess["tipo"] = "admin"
+    sess["session_id"] = "test-session"
+    sess["helpdesk_csrf_token"] = "csrf-test"
+
+db = get_db()
+db.execute(
+    """
+    INSERT INTO user_sessions (session_id, user_id, username, created_at, last_seen, ativo)
+    VALUES ('test-session', ?, 'test-admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+    """,
+    (user_id,),
+)
+db.commit()
+db.close()
+
+for path in ("/helpdesk", "/helpdesk/new", "/helpdesk/contacts", "/helpdesk/settings"):
+    response = http.get(path)
+    assert response.status_code == 200, (path, response.get_data(as_text=True))
+
+generated = http.post(
+    "/helpdesk/settings/integration-token",
+    data={"_csrf_token": "csrf-test", "nome": "Token descartavel"},
+)
+assert generated.status_code == 200
+generated_body = generated.get_data(as_text=True)
+assert "Copie agora" in generated_body
+with http.session_transaction() as sess:
+    assert "helpdesk_new_integration_token" not in sess
+db = get_db()
+generated_hash = db.execute(
+    "SELECT token_hash FROM integration_tokens WHERE nome='Token descartavel'"
+).fetchone()["token_hash"]
+assert generated_hash not in generated_body
+assert "Token descartavel" in generated_body
+db.close()
+
+created = http.post(
+    "/helpdesk/tickets",
+    data={
+        "_csrf_token": "csrf-test",
+        "cliente_id": str(client_id),
+        "requester_contact_id": str(contact_id),
+        "assunto": "Teste manual",
+        "descricao": "Validacao do helpdesk",
+        "categoria": "support",
+        "prioridade": "normal",
+    },
+)
+assert created.status_code == 302
+assert "/helpdesk/tickets/" in created.headers["Location"]
+
+raw_token = "ticketz-test-token"
+db = get_db()
+db.execute(
+    """
+    INSERT INTO integration_tokens (nome, token_hash, scopes, ativo)
+    VALUES ('Ticketz teste', ?, 'tickets:create', 1)
+    """,
+    (hashlib.sha256(raw_token.encode()).hexdigest(),),
+)
+db.execute(
+    """
+    UPDATE ticketz_config SET ativo=1, token_enc=?, notify_ticket_opened=1 WHERE id=1
+    """,
+    (encrypt_secret("outbound-test-token"),),
+)
+db.commit()
+db.close()
+
+payload = {
+    "source_ticket_id": "1845",
+    "source_ticket_uuid": "example-uuid",
+    "company_id": "1",
+    "client_id": client_id,
+    "opened_by": {"external_id": "27", "name": "Joao Ticketz"},
+    "requester": {"name": "Contato Teste", "number": "5511999999999"},
+    "subject": "Servidor indisponivel",
+    "description": "Chamado criado pelo atendimento",
+    "priority": "high",
+    "category": "server",
+    "source_url": "https://chat.example.test/tickets/example-uuid",
+    "messages": [{"author": "Cliente", "body": "Nao consigo acessar"}],
+}
+headers = {"Authorization": f"Bearer {raw_token}"}
+api_created = http.post("/api/v1/integrations/ticketz/tickets", json=payload, headers=headers)
+assert api_created.status_code == 201, api_created.get_data(as_text=True)
+api_result = api_created.get_json()
+assert api_result["created"] is True
+assert api_result["number"].startswith("HD-")
+
+duplicate = http.post("/api/v1/integrations/ticketz/tickets", json=payload, headers=headers)
+assert duplicate.status_code == 200
+assert duplicate.get_json()["created"] is False
+assert duplicate.get_json()["ticket_id"] == api_result["ticket_id"]
+
+db = get_db()
+ticket = db.execute("SELECT * FROM helpdesk_tickets WHERE id=?", (api_result["ticket_id"],)).fetchone()
+assert ticket["opened_by_type"] == "ticketz_user"
+assert ticket["opened_by_external_id"] == "27"
+assert ticket["opened_by_name"] == "Joao Ticketz"
+assert ticket["requester_contact_id"] == contact_id
+assert db.execute("SELECT COUNT(*) AS c FROM external_ticket_links").fetchone()["c"] == 1
+assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='pending'").fetchone()["c"] == 1
+db.close()
+
+import worker.ticketz_notifications as notifications
+
+notifications.send_text = lambda config, token, recipient, body: 200
+result = notifications.process_notification_outbox()
+assert result == {"sent": 1, "error": 0}
+db = get_db()
+assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='sent'").fetchone()["c"] == 1
+db.close()
+
+print("helpdesk-candidate-ok")

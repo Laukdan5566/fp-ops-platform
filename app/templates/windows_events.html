@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1">Eventos de desligamento do Windows</h2>
+        <div class="text-muted">Auditoria enviada pelos agents instalados nos servidores.</div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="metric"><small>Eventos em 30 dias</small><strong class="fs-4">{{ resumo.total or 0 }}</strong></div></div>
+    <div class="col-md-3"><div class="metric"><small>Planejados / por usuario</small><strong class="fs-4">{{ resumo.planejados or 0 }}</strong></div></div>
+    <div class="col-md-3"><div class="metric"><small>Inesperados / energia</small><strong class="fs-4 text-danger">{{ resumo.inesperados or 0 }}</strong></div></div>
+    <div class="col-md-3"><div class="metric"><small>Servidores identificados</small><strong class="fs-4">{{ resumo.hosts or 0 }}</strong></div></div>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select class="form-select" name="cliente_id">
+            <option value="">Todos os clientes</option>
+            {% for cliente in clientes %}
+            <option value="{{ cliente.id }}" {% if filtros.cliente_id == cliente.id|string %}selected{% endif %}>{{ cliente.nome_exibicao }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" name="event_id">
+            <option value="">Todos os eventos</option>
+            <option value="1074" {% if filtros.event_id == '1074' %}selected{% endif %}>1074 - usuario/processo desligou</option>
+            <option value="1076" {% if filtros.event_id == '1076' %}selected{% endif %}>1076 - motivo apos queda</option>
+            <option value="6008" {% if filtros.event_id == '6008' %}selected{% endif %}>6008 - desligamento inesperado</option>
+            <option value="41" {% if filtros.event_id == '41' %}selected{% endif %}>41 - energia/travamento</option>
+            <option value="6006" {% if filtros.event_id == '6006' %}selected{% endif %}>6006 - servico de eventos encerrado</option>
+        </select>
+    </div>
+    <div class="col-md-4"><input class="form-control" name="q" value="{{ filtros.q }}" placeholder="Servidor, usuario ou mensagem"></div>
+    <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
+</form>
+
+<div class="table-responsive">
+<table class="table table-bordered table-hover bg-white">
+    <thead>
+        <tr>
+            <th>Quando (UTC)</th>
+            <th>Cliente / servidor</th>
+            <th>Evento</th>
+            <th>Usuario responsavel</th>
+            <th>Processo / motivo</th>
+            <th>Alerta</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for evento in eventos %}
+        <tr>
+            <td class="text-nowrap">{{ evento.occurred_at }}</td>
+            <td>
+                <strong>{{ evento.nome_exibicao }}</strong><br>
+                <span class="text-muted">{{ evento.hostname }}{% if evento.servidor_log %} · {{ evento.servidor_log }}{% endif %}</span>
+            </td>
+            <td>
+                {% if evento.event_id == 1074 %}<span class="badge bg-warning text-dark">1074 planejado</span>
+                {% elif evento.event_id in (41, 6008) %}<span class="badge bg-danger">{{ evento.event_id }} inesperado</span>
+                {% elif evento.event_id == 1076 %}<span class="badge bg-info text-dark">1076 motivo</span>
+                {% else %}<span class="badge bg-secondary">{{ evento.event_id }}</span>{% endif %}
+                <div class="small text-muted mt-1">{{ evento.event_type or evento.provider or '-' }}</div>
+            </td>
+            <td><strong>{{ evento.initiated_by or 'nao identificado' }}</strong></td>
+            <td style="max-width: 480px;">
+                {% if evento.process_name %}<div><strong>Processo:</strong> {{ evento.process_name }}</div>{% endif %}
+                {% if evento.reason %}<div><strong>Motivo:</strong> {{ evento.reason }}</div>{% endif %}
+                {% if evento.comment %}<div><strong>Comentario:</strong> {{ evento.comment }}</div>{% endif %}
+                {% if not evento.process_name and not evento.reason and not evento.comment %}<span class="text-muted">{{ evento.message or '-' }}</span>{% endif %}
+            </td>
+            <td>
+                {% if evento.alertar_eventos_windows == 1 %}
+                    <span class="badge bg-success">ativo</span>
+                    <div class="small text-muted">{{ evento.responsavel_nome or evento.responsavel_email or '-' }}</div>
+                {% else %}
+                    <span class="badge bg-secondary">desativado</span>
+                {% endif %}
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Nenhum evento recebido com estes filtros.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<div class="alert alert-light border mt-3 small">
+    O evento 1074 normalmente identifica usuario, processo e motivo. Eventos 41 e 6008 indicam queda de energia, reset ou travamento e podem nao conter um usuario.
+</div>
+
+{% endblock %}

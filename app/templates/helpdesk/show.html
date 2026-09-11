@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div><div class="text-muted">{{ ticket.numero }}</div><h2>{{ ticket.assunto }}</h2></div>
+    <a href="/helpdesk" class="btn btn-outline-secondary">Voltar</a>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card card-body mb-3">
+            <div style="white-space: pre-wrap">{{ ticket.descricao }}</div>
+            {% if ticket.source_url %}<hr><a href="{{ ticket.source_url }}" target="_blank" rel="noopener noreferrer">Abrir atendimento de origem</a>{% endif %}
+        </div>
+        <h5>Interações</h5>
+        {% for comment in comments %}
+        <div class="card card-body mb-2 {% if comment.internal %}border-warning{% endif %}">
+            <div class="d-flex justify-content-between"><strong>{{ comment.author_name or comment.author_type }}</strong><small class="text-muted">{{ comment.created_at }}</small></div>
+            {% if comment.internal %}<span class="badge bg-warning text-dark align-self-start my-1">Nota interna</span>{% endif %}
+            <div style="white-space: pre-wrap">{{ comment.body }}</div>
+        </div>
+        {% else %}<div class="text-muted mb-3">Nenhuma interação registrada.</div>{% endfor %}
+        <form method="post" action="/helpdesk/tickets/{{ ticket.id }}/comments" class="card card-body">
+            <input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}">
+            <textarea class="form-control mb-2" name="body" rows="4" maxlength="10000" placeholder="Adicionar interação" required></textarea>
+            <div class="d-flex justify-content-between"><label><input type="checkbox" name="internal" value="1" checked> Nota interna</label><button class="btn btn-primary">Registrar</button></div>
+        </form>
+    </div>
+    <div class="col-lg-4">
+        <form method="post" action="/helpdesk/tickets/{{ ticket.id }}/update" class="card card-body mb-3">
+            <input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}">
+            <label class="form-label">Status</label><select class="form-select mb-2" name="status">{% for value, label in [('open','Novo'),('in_progress','Em atendimento'),('waiting_customer','Aguardando cliente'),('resolved','Resolvido'),('closed','Fechado')] %}<option value="{{ value }}" {% if ticket.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <label class="form-label">Prioridade</label><select class="form-select mb-2" name="prioridade">{% for value, label in [('low','Baixa'),('normal','Normal'),('high','Alta'),('critical','Crítica')] %}<option value="{{ value }}" {% if ticket.prioridade == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <label class="form-label">Responsável</label><select class="form-select mb-3" name="assignee_user_id"><option value="">Não atribuído</option>{% for u in users %}<option value="{{ u.id }}" {% if ticket.assignee_user_id == u.id %}selected{% endif %}>{{ u.username }}</option>{% endfor %}</select>
+            <button class="btn btn-success">Salvar atendimento</button>
+        </form>
+        <div class="card card-body mb-3">
+            <h6>Contexto</h6>
+            <div><small class="text-muted">Cliente</small><br>{{ ticket.cliente_nome or 'Não vinculado' }}</div><hr>
+            <div><small class="text-muted">Solicitante</small><br>{{ ticket.requester_name or '-' }}{% if ticket.requester_phone %}<br>{{ ticket.requester_phone }}{% endif %}</div><hr>
+            <div><small class="text-muted">Aberto por</small><br>{{ ticket.opened_by_name or ticket.opened_by_type }} via {{ ticket.origem }}</div>
+            {% if ticket.servidor_nome %}<hr><div><small class="text-muted">Servidor</small><br>{{ ticket.servidor_nome }}</div>{% endif %}
+            {% if ticket.pfsense_nome %}<hr><div><small class="text-muted">pfSense</small><br>{{ ticket.pfsense_nome }}</div>{% endif %}
+        </div>
+        <div class="card card-body"><h6>Auditoria</h6>{% for item in audit %}<div class="small border-bottom py-2"><strong>{{ item.action }}</strong><br>{{ item.actor_name or item.actor_type }} · {{ item.created_at }}</div>{% endfor %}</div>
+    </div>
+</div>
+{% endblock %}

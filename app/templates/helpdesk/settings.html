@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h2>Integração Ticketz</h2><div class="text-muted">Entrada de chamados e notificações por WhatsApp.</div></div><a href="/helpdesk" class="btn btn-outline-secondary">Voltar</a></div>
+{% if new_token %}<div class="alert alert-warning"><strong>Copie agora o token da API. Ele não será exibido novamente.</strong><textarea class="form-control mt-2" rows="3" readonly>{{ new_token }}</textarea></div>{% endif %}
+<div class="row g-3">
+    <div class="col-lg-7"><form method="post" action="/helpdesk/settings/ticketz" class="card card-body">
+        <input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}"><h5>Saída WhatsApp</h5>
+        <label class="form-label">Endpoint HTTPS</label><input class="form-control mb-2" name="endpoint" value="{{ config.endpoint }}" required>
+        <label class="form-label">Token da conexão</label><input class="form-control mb-2" type="password" name="token" autocomplete="new-password" placeholder="{% if token_configured %}Configurado — deixe vazio para manter{% else %}Cadastre o token do Ticketz{% endif %}">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" id="tz-active" {% if config.ativo %}checked{% endif %}><label class="form-check-label" for="tz-active">Integração de saída ativa</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="save_on_ticket" value="1" id="tz-save" {% if config.save_on_ticket %}checked{% endif %}><label class="form-check-label" for="tz-save">Salvar mensagem no atendimento Ticketz</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="link_preview" value="1" id="tz-preview" {% if config.link_preview %}checked{% endif %}><label class="form-check-label" for="tz-preview">Prévia de links</label></div><hr>
+        <strong>Eventos enviados</strong>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_ticket_opened" value="1" id="tz-open" {% if config.notify_ticket_opened %}checked{% endif %}><label class="form-check-label" for="tz-open">Abertura</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_ticket_updated" value="1" id="tz-update" {% if config.notify_ticket_updated %}checked{% endif %}><label class="form-check-label" for="tz-update">Atualizações</label></div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="notify_ticket_resolved" value="1" id="tz-resolve" {% if config.notify_ticket_resolved %}checked{% endif %}><label class="form-check-label" for="tz-resolve">Resolução</label></div>
+        <div><button class="btn btn-primary">Salvar configuração</button></div>
+    </form></div>
+    <div class="col-lg-5"><div class="card card-body mb-3"><h5>Entrada de chamados</h5><p>Gere um token para o backend do Ticketz chamar a API do FP Ops.</p><code>POST /api/v1/integrations/ticketz/tickets</code>
+        <form method="post" action="/helpdesk/settings/integration-token" class="mt-3"><input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}"><div class="input-group"><input class="form-control" name="nome" value="Ticketz produção" required><button class="btn btn-outline-primary">Gerar token</button></div></form>
+    </div>
+    <div class="card card-body"><h5>Tokens</h5>{% for token in tokens %}<div class="border-bottom py-2"><div class="d-flex justify-content-between"><strong>{{ token.nome }}</strong>{% if token.ativo %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Revogado</span>{% endif %}</div><small class="text-muted">{{ token.scopes }} · último uso {{ token.last_used_at or 'nunca' }}</small>{% if token.ativo %}<form method="post" action="/helpdesk/settings/integration-token/{{ token.id }}/revoke" class="mt-1"><input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Revogar</button></form>{% endif %}</div>{% else %}<div class="text-muted">Nenhum token criado.</div>{% endfor %}</div></div>
+</div>
+<div class="card card-body mt-3"><h5>Fila de notificações</h5><div>{% for row in outbox %}<span class="badge bg-secondary me-2">{{ row.status }}: {{ row.total }}</span>{% else %}<span class="text-muted">Fila vazia.</span>{% endfor %}</div></div>
+{% endblock %}

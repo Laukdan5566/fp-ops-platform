@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1">Armazenamento FTP dos pfSense</h2>
+        <div class="text-muted">Os arquivos enviados permanecem criptografados. A senha do servidor também é armazenada criptografada.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="/pfsense">Voltar</a>
+</div>
+
+{% if message %}<div class="alert alert-info">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if storage and storage.last_error %}<div class="alert alert-danger"><strong>Último teste:</strong> {{ storage.last_error }}</div>{% endif %}
+
+<form method="post" action="/pfsense/storage" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Protocolo</label>
+                <select name="protocol" class="form-select">
+                    <option value="ftps" {% if not storage or storage.protocol == 'ftps' %}selected{% endif %}>FTPS explícito (recomendado)</option>
+                    <option value="ftp" {% if storage and storage.protocol == 'ftp' %}selected{% endif %}>FTP sem criptografia</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Servidor</label>
+                <input name="host" class="form-control" required value="{{ storage.host if storage and storage.host else '' }}" placeholder="ftp.exemplo.com ou 10.0.0.10">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Porta</label>
+                <input name="port" type="number" min="1" max="65535" class="form-control" required value="{{ storage.port if storage and storage.port else 21 }}">
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Usuário</label>
+                <input name="username" class="form-control" {% if not storage or not storage.has_username %}required{% endif %} autocomplete="off" placeholder="{{ 'Deixe vazio para manter o usuário criptografado' if storage and storage.has_username else 'Usuário FTP' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Senha</label>
+                <input name="password" type="password" class="form-control" {% if not storage or not storage.has_password %}required{% endif %} autocomplete="new-password" placeholder="{{ 'Deixe vazio para manter a senha criptografada' if storage and storage.has_password else 'Senha FTP' }}">
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Diretório remoto</label>
+                <input name="remote_dir" class="form-control font-monospace" required value="{{ storage.remote_dir if storage and storage.remote_dir else '/pfsense-backups' }}">
+                <div class="form-text">O diretório será criado automaticamente quando o servidor permitir.</div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="passive" id="passive" {% if not storage or storage.passive %}checked{% endif %}>
+                    <label class="form-check-label" for="passive">Modo passivo</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="verify_tls" id="verify_tls" {% if not storage or storage.verify_tls %}checked{% endif %}>
+                    <label class="form-check-label" for="verify_tls">Validar certificado TLS</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="active" id="active" {% if not storage or storage.active %}checked{% endif %}>
+                    <label class="form-check-label" for="active">Enviar novos backups</label>
+                </div>
+            </div>
+
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-md-8">
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" name="retention_enabled" id="retention_enabled" {% if not storage or storage.retention_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="retention_enabled"><strong>Limpeza automática dos backups antigos</strong></label>
+                    <div class="form-text">Executada uma vez por dia e limitada aos arquivos criptografados criados pelo Monitor.</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Retenção no FTP (dias)</label>
+                <input name="retention_days" type="number" min="1" max="3650" class="form-control" required value="{{ storage.retention_days if storage and storage.retention_days else 90 }}">
+            </div>
+        </div>
+    </div>
+    <div class="card-footer bg-white d-flex gap-2">
+        <button class="btn btn-primary">Salvar configuração</button>
+    </div>
+</form>
+
+{% if storage and storage.host %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <strong>Último teste:</strong> {{ storage.last_test_at or "ainda não executado" }}
+                {% if storage.last_status == "success" %}<span class="badge bg-success ms-2">conectado</span>{% endif %}
+                {% if storage.last_status == "error" %}<span class="badge bg-danger ms-2">falha</span>{% endif %}
+            </div>
+            <form method="post" action="/pfsense/storage/test">
+                <button class="btn btn-outline-primary">Testar conexão</button>
+            </form>
+        </div>
+        <hr>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <strong>Última limpeza:</strong> {{ storage.last_cleanup_at or "ainda não executada" }}
+                {% if storage.last_cleanup_status == "success" %}<span class="badge bg-success ms-2">{{ storage.last_cleanup_deleted or 0 }} removidos</span>{% endif %}
+                {% if storage.last_cleanup_status == "error" %}<span class="badge bg-danger ms-2">falha</span>{% endif %}
+                {% if storage.last_cleanup_error %}<div class="small text-danger mt-1">{{ storage.last_cleanup_error }}</div>{% endif %}
+            </div>
+            <form method="post" action="/pfsense/storage/cleanup">
+                <button class="btn btn-outline-danger">Limpar antigos agora</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="alert alert-warning mt-3 mb-0">
+    FTP comum expõe usuário e senha durante a conexão. Use FTPS sempre que o servidor oferecer suporte. O conteúdo do backup continua criptografado nos dois modos.
+</div>
+
+{% endblock %}

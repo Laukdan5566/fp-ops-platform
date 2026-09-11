@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Clientes</h2>
+
+{% if session.tipo == "admin" %}
+<div class="alert alert-info d-flex justify-content-between align-items-center">
+    <div><strong>Atualizacao automatica do Agent:</strong> execute uma unica vez nos servidores que ainda usam a versao 1.2.x.</div>
+    <a class="btn btn-sm btn-primary" href="/static/enable-agent-auto-update.ps1" download>Baixar script de migracao</a>
+</div>
+{% endif %}
+
+{% if session.tipo == "admin" %}
+<form method="post" action="/clientes/add" class="row g-2 mb-4">
+    <div class="col-md-4">
+        <input name="nome_exibicao" class="form-control" placeholder="Nome do Cliente" required>
+    </div>
+    <div class="col-md-3">
+        <input name="responsavel_nome" class="form-control" placeholder="Responsavel / dono">
+    </div>
+    <div class="col-md-3">
+        <input name="responsavel_email" type="email" class="form-control" placeholder="E-mail para alertas">
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary">Adicionar Cliente</button>
+    </div>
+</form>
+{% endif %}
+
+<table class="table table-bordered">
+<tr>
+    <th>ID</th>
+    <th>Nome</th>
+    <th>Status</th>
+    <th>Ações</th>
+    <th>Alertas Windows</th>
+</tr>
+
+{% for c in clientes %}
+<tr>
+    <td>{{ c.id }}</td>
+    <td>{{ c.nome_exibicao }}</td>
+    <td>
+        {% if c.ativo == 1 %}
+            <span class="badge bg-success">Ativo</span>
+        {% else %}
+            <span class="badge bg-secondary">Inativo</span>
+        {% endif %}
+    </td>
+    <td>
+        <a href="/servidores/{{c.id}}" class="btn btn-info btn-sm">Servidores</a>
+        {% if c.ativo == 1 %}
+        <a href="/clientes/{{c.id}}/agent-exe" class="btn btn-outline-primary btn-sm">Agent EXE</a>
+        <a href="/clientes/{{c.id}}/agent-exe/legacy-ws2012" class="btn btn-outline-secondary btn-sm">EXE WS2012</a>
+        <a href="/clientes/{{c.id}}/agent-package" class="btn btn-outline-primary btn-sm">ZIP</a>
+        <a href="/clientes/{{c.id}}/agent-package/legacy-ws2012" class="btn btn-outline-secondary btn-sm">ZIP WS2012</a>
+        {% endif %}
+        {% if session.tipo == "admin" %}
+        <a href="/clientes/toggle/{{c.id}}" class="btn btn-warning btn-sm">Ativar/Desativar</a>
+        <a href="/clientes/delete/{{c.id}}" class="btn btn-danger btn-sm">Excluir</a>
+        {% endif %}
+    </td>
+    <td style="min-width: 330px;">
+        {% if session.tipo == "admin" %}
+        <form method="post" action="/clientes/{{ c.id }}/windows-alerts" class="row g-1">
+            <div class="col-6">
+                <input name="responsavel_nome" class="form-control form-control-sm" placeholder="Responsavel" value="{{ c.responsavel_nome or '' }}">
+            </div>
+            <div class="col-6">
+                <input name="responsavel_email" type="email" class="form-control form-control-sm" placeholder="E-mail" value="{{ c.responsavel_email or '' }}">
+            </div>
+            <div class="col-8 form-check ms-2 mt-2">
+                <input class="form-check-input" type="checkbox" name="alertar_eventos_windows" value="1" id="alert-win-{{ c.id }}" {% if c.alertar_eventos_windows == 1 %}checked{% endif %}>
+                <label class="form-check-label small" for="alert-win-{{ c.id }}">Alertar desligamentos</label>
+            </div>
+            <div class="col text-end mt-1">
+                <button class="btn btn-outline-success btn-sm">Salvar</button>
+            </div>
+        </form>
+        {% elif c.alertar_eventos_windows == 1 %}
+            <span class="badge bg-success">Ativo</span>
+            <div class="small text-muted">{{ c.responsavel_nome or c.responsavel_email or '-' }}</div>
+        {% else %}
+            <span class="badge bg-secondary">Desativado</span>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+</table>
+
+{% endblock %}

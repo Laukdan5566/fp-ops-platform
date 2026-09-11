@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <title>Relatorio de disponibilidade - {{ cliente_nome }}</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #1f2937;
+            --muted: #6b7280;
+            --line: #e5e7eb;
+            --paper: #ffffff;
+            --soft: #f6f7f9;
+            --brand: #ff7a00;
+            --good: #198754;
+            --warn: #d9a300;
+            --bad: #dc3545;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: #e5e7eb;
+            color: var(--ink);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 13px;
+            line-height: 1.35;
+            margin: 0;
+            padding: 24px;
+        }
+
+        .page {
+            background: var(--paper);
+            border: 1px solid var(--line);
+            margin: 0 auto;
+            max-width: 1160px;
+            min-height: 100vh;
+            padding: 34px;
+        }
+
+        .report-head {
+            align-items: flex-start;
+            border-bottom: 4px solid var(--brand);
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            padding-bottom: 18px;
+        }
+
+        .brand {
+            align-items: center;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .brand-mark {
+            background: var(--brand);
+            border-radius: 6px;
+            color: #fff;
+            font-weight: 700;
+            padding: 8px 10px;
+        }
+
+        .brand-name {
+            color: var(--brand);
+            font-weight: 700;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin: 0 0 8px;
+        }
+
+        h2 {
+            font-size: 16px;
+            margin: 28px 0 10px;
+        }
+
+        .muted { color: var(--muted); }
+        .right { text-align: right; }
+
+        .summary {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(5, 1fr);
+            margin: 22px 0;
+        }
+
+        .metric {
+            background: var(--soft);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 14px;
+        }
+
+        .metric small {
+            color: var(--muted);
+            display: block;
+            font-size: 11px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .metric strong {
+            display: block;
+            font-size: 24px;
+        }
+
+        .status-list {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .alert-item {
+            border: 1px solid var(--line);
+            border-left: 5px solid var(--bad);
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+
+        .alert-item.warning { border-left-color: var(--warn); }
+
+        .badge {
+            border-radius: 999px;
+            color: #fff;
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 8px;
+            white-space: nowrap;
+        }
+
+        .badge.good { background: var(--good); }
+        .badge.warn { background: var(--warn); color: #111827; }
+        .badge.bad { background: var(--bad); }
+        .badge.muted { background: #6b7280; color: #fff; }
+
+        table {
+            border-collapse: collapse;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        th, td {
+            border-bottom: 1px solid var(--line);
+            padding: 9px 8px;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        th {
+            background: #f3f4f6;
+            color: #4b5563;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .host {
+            font-weight: 700;
+        }
+
+        .small {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .bar {
+            background: #e5e7eb;
+            border-radius: 999px;
+            height: 10px;
+            overflow: hidden;
+            width: 130px;
+        }
+
+        .bar span {
+            display: block;
+            height: 10px;
+        }
+
+        .bar .good { background: var(--good); }
+        .bar .warn { background: var(--warn); }
+        .bar .bad { background: var(--bad); }
+
+        .footer {
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 11px;
+            margin-top: 28px;
+            padding-top: 14px;
+        }
+
+        .print-actions {
+            margin: 0 auto 12px;
+            max-width: 1160px;
+            text-align: right;
+        }
+
+        button {
+            background: var(--brand);
+            border: 0;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-weight: 700;
+            padding: 10px 14px;
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .page { border: 0; max-width: none; padding: 18mm; }
+            .print-actions { display: none; }
+            tr, .metric, .alert-item { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+{% set periodo_label = "24h" if horas == 24 else ("7 dias" if horas == 168 else "30 dias") %}
+
+<div class="print-actions">
+    <button onclick="window.print()">Imprimir / salvar em PDF</button>
+</div>
+
+<main class="page">
+    <header class="report-head">
+        <div>
+            <div class="brand">
+                <span class="brand-mark">FP</span>
+                <span class="brand-name">Informatica</span>
+            </div>
+            <h1>Relatorio de disponibilidade</h1>
+            <div class="muted">{{ cliente_nome }} - periodo analisado: {{ periodo_label }}</div>
+        </div>
+        <div class="right">
+            <strong>Monitor de Backup</strong>
+            <div class="muted">Gerado em {{ agora }}</div>
+            <div class="muted">Base: heartbeat dos agents</div>
+        </div>
+    </header>
+
+    <section class="summary">
+        <div class="metric">
+            <small>Agents monitorados</small>
+            <strong>{{ resumo.total }}</strong>
+        </div>
+        <div class="metric">
+            <small>Online agora</small>
+            <strong style="color: var(--good);">{{ resumo.online }}</strong>
+        </div>
+        <div class="metric">
+            <small>Offline agora</small>
+            <strong style="color: var(--bad);">{{ resumo.offline }}</strong>
+        </div>
+        <div class="metric">
+            <small>Sem dados</small>
+            <strong>{{ resumo.sem_dados }}</strong>
+        </div>
+        <div class="metric">
+            <small>Media do periodo</small>
+            {% if resumo.media is not none %}
+                <strong>{{ "%.2f"|format(resumo.media) }}%</strong>
+            {% else %}
+                <strong>--</strong>
+            {% endif %}
+        </div>
+    </section>
+
+    {% set alertas = linhas | selectattr("streak.estado", "ne", "online") | list %}
+    {% if alertas %}
+    <section>
+        <h2>Pontos que precisam de atencao</h2>
+        <div class="status-list">
+            {% for row in alertas[:8] %}
+            <div class="alert-item {% if row.streak.estado == 'sem_dados' %}warning{% endif %}">
+                <strong>{{ row.nome_log }}</strong>
+                <div class="small">{{ row.cliente }}</div>
+                {% if row.streak.estado == "offline" %}
+                    <span class="badge bad">Offline ha {{ formatar_idade(row.streak.desde_min) }}</span>
+                {% else %}
+                    <span class="badge warn">Sem historico de heartbeat</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section>
+        <h2>Detalhamento por servidor</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>Servidor / Log</th>
+                    <th>Status atual</th>
+                    <th>Disponibilidade</th>
+                    <th>Online</th>
+                    <th>Offline</th>
+                    <th>Ultimo contato</th>
+                    <th>Versao</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in linhas %}
+                {% set pct = row.periodo.percentual %}
+                <tr>
+                    <td>{{ row.cliente }}</td>
+                    <td>
+                        <div class="host">{{ row.nome_log }}</div>
+                        {% if row.agente.hostname %}
+                            <div class="small">{{ row.agente.hostname }}{% if row.agente.ip_local %} - {{ row.agente.ip_local }}{% endif %}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.streak.estado == "online" %}
+                            <span class="badge good">Online</span>
+                            <div class="small">ativo ha {{ formatar_idade(row.streak.desde_min) }}</div>
+                        {% elif row.streak.estado == "offline" %}
+                            <span class="badge bad">Offline</span>
+                            <div class="small">off ha {{ formatar_idade(row.streak.desde_min) }}</div>
+                        {% else %}
+                            <span class="badge muted">Sem dados</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if pct is not none %}
+                            <strong>{{ "%.2f"|format(pct) }}%</strong>
+                            <div class="bar">
+                                <span class="{% if pct >= 98 %}good{% elif pct >= 90 %}warn{% else %}bad{% endif %}" style="width: {{ pct }}%;"></span>
+                            </div>
+                        {% else %}
+                            <span class="muted">sem historico</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ formatar_idade(row.periodo.online_min) }}</td>
+                    <td>
+                        {% if row.periodo.offline_min > 0 %}
+                            <strong style="color: var(--bad);">{{ formatar_idade(row.periodo.offline_min) }}</strong>
+                        {% else %}
+                            0 min
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ row.agente.last_seen or "-" }}
+                        {% if row.agente.idade_min is not none %}
+                            <div class="small">ha {{ formatar_idade(row.agente.idade_min) }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{% if row.agente.version %}v{{ row.agente.version }}{% else %}-{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="muted">Nenhum servidor ativo encontrado.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <div class="footer">
+        O calculo considera o agent online quando envia heartbeat recente. Se o agent ficar mais de 10 minutos sem responder, o intervalo seguinte passa a contar como offline. Este relatorio mede a disponibilidade do monitor local, nao substitui a validacao funcional do backup.
+    </div>
+</main>
+
+</body>
+</html>

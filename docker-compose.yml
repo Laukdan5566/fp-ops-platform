@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: backup-monitor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: backup_monitor
+      POSTGRES_USER: backup_monitor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backup_monitor_dev}
+    ports:
+      - "54329:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backup_monitor -d backup_monitor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: backup-monitor-web
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+
+  worker:
+    build: .
+    container_name: backup-monitor-worker
+    restart: always
+    command: python worker/worker.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env

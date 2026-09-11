@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Cadastrar Servidor Detectado</h2>
+
+<form method="POST" action="/servidores/salvar-detectado">
+
+    <div class="mb-3">
+        <label>Nome do Log</label>
+        <input type="text" name="nome_log"
+               class="form-control"
+               value="{{ nome_log }}"
+               readonly>
+    </div>
+
+    <div class="mb-3">
+        <label>Cliente</label>
+        <select name="cliente_id" class="form-control" required>
+            {% for c in clientes %}
+            <option value="{{ c.id }}">{{ c.nome_exibicao }}</option>
+            {% endfor %}
+            <option value="novo">-- Criar Novo Cliente --</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label>Nome Novo Cliente (se selecionar novo)</label>
+        <input type="text" name="novo_cliente" class="form-control">
+    </div>
+
+    <div class="mb-3">
+        <label>Backups por semana</label>
+        <input type="number" name="backups_semana"
+               class="form-control"
+               value="7" required>
+    </div>
+
+    <button class="btn btn-primary">Salvar</button>
+
+</form>
+
+{% endblock %}

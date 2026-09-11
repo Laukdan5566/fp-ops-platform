@@ -1,0 +1,27 @@
+{
+  "monitor_url": "https://bkp.fpinformatica.com.br",
+  "api_key": "COLE_A_CHAVE_API_AQUI",
+  "servidor_log": "NOME_DO_SERVIDOR_NO_MONITOR",
+  "log_paths": [
+    "C:\\ProgramData\\IperiusBackup\\Logs",
+    "C:\\ProgramData\\Iperius Backup\\Logs",
+    "C:\\Program Files (x86)\\Iperius Backup\\Logs",
+    "C:\\Program Files\\Iperius Backup\\Logs",
+    "C:\\Users\\*\\AppData\\Local\\Temp\\IperiusTemp"
+  ],
+  "patterns": [
+    "*.txt",
+    "*.log",
+    "*.html",
+    "*.htm"
+  ],
+  "email_grace_minutes": 10,
+  "scan_interval_seconds": 30,
+  "heartbeat_interval_seconds": 300,
+  "recent_hours_on_start": 72,
+  "windows_event_monitoring_enabled": true,
+  "windows_event_recent_hours_on_start": 168,
+  "auto_update_enabled": true,
+  "state_path": "C:\\ProgramData\\BackupMonitorAgent\\state.json",
+  "log_path": "C:\\ProgramData\\BackupMonitorAgent\\agent.log"
+}

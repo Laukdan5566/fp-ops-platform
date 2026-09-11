@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h2 class="mb-1">Backups</h2>
+        <div class="text-muted">Status dos logs recebidos, atrasos e falhas. Atualizado em {{ agora }}</div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="/backups">Atualizar</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Total</small>
+            <strong class="fs-4">{{ resumo.total }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>OK</small>
+            <strong class="text-success fs-4">{{ resumo.ok }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Problemas</small>
+            <strong class="text-danger fs-4">{{ resumo.problemas }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Aguardando</small>
+            <strong class="text-info fs-4">{{ resumo.aguardando }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Sem agenda</small>
+            <strong class="text-secondary fs-4">{{ resumo.sem_agenda }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Sem log</small>
+            <strong class="text-warning fs-4">{{ resumo.sem_log }}</strong>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="metric h-100">
+            <small>Coletor de e-mail</small>
+            {% if ultimo_worker %}
+                <div class="d-flex align-items-center gap-2">
+                    {% if worker_fresh %}
+                        <span class="badge bg-success">online</span>
+                    {% elif ultimo_worker.status == "running" %}
+                        <span class="badge bg-info text-dark">rodando</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark">verificar</span>
+                    {% endif %}
+                    <strong>{{ ultimo_worker.status }}</strong>
+                    <span class="text-muted">ha {{ worker_age }}</span>
+                </div>
+                {% if ultimo_worker.detalhe %}
+                    <div class="small text-muted mt-2">{{ ultimo_worker.detalhe }}</div>
+                {% endif %}
+            {% else %}
+                <span class="badge bg-danger">sem execucao</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="metric h-100">
+            <small>Origem dos logs nas ultimas 24h</small>
+            {% if origem_24h %}
+                <div class="d-flex flex-wrap gap-2">
+                    {% for item in origem_24h %}
+                        <span class="badge text-bg-light border">{{ item.origem or "email" }}: {{ item.total }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <span class="text-muted">Nenhum log recebido nas ultimas 24h.</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive mb-4">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Cliente</th>
+                <th>Servidor</th>
+                <th>Status</th>
+                <th>Ultimo log</th>
+                <th>Idade</th>
+                <th>Origem</th>
+                <th>Previsto</th>
+                <th>Detalhe</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in linhas %}
+            <tr>
+                <td>{{ row.cliente }}</td>
+                <td><a href="/servidor/{{ row.nome_log }}">{{ row.nome_log }}</a></td>
+                <td>
+                    {% if row.status == "ok" %}
+                        <span class="badge bg-success">OK</span>
+                    {% elif row.status == "erro" %}
+                        <span class="badge bg-danger">Erro</span>
+                    {% elif row.status == "atrasado" %}
+                        <span class="badge bg-warning text-dark">Atrasado</span>
+                    {% elif row.status == "aguardando" %}
+                        <span class="badge bg-info text-dark">Aguardando</span>
+                    {% elif row.status == "alerta" %}
+                        <span class="badge bg-warning text-dark">Alerta</span>
+                    {% elif row.status == "sem_log" %}
+                        <span class="badge bg-dark">Sem log</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Sem agenda</span>
+                    {% endif %}
+                </td>
+                <td>{{ row.ultimo_log or "-" }}</td>
+                <td>{{ formatar_idade(row.idade_min) }}</td>
+                <td>{{ row.origem or "-" }}</td>
+                <td>
+                    {% if row.previsto %}
+                        {{ row.previsto }}
+                        {% if row.prazo %}
+                            <div class="small text-muted">prazo {{ row.prazo }}</div>
+                        {% endif %}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>{{ row.detalhe }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 class="h5">Ultimos logs recebidos</h3>
+<div class="table-responsive">
+    <table class="table table-sm table-bordered align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Data</th>
+                <th>Servidor</th>
+                <th>Status</th>
+                <th>Origem</th>
+                <th>Resumo</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in recentes %}
+            <tr>
+                <td>{{ log.data_email }}</td>
+                <td><a href="/servidor/{{ log.servidor_log }}">{{ log.servidor_log }}</a></td>
+                <td>
+                    {% if log.status == "success" %}
+                        <span class="badge bg-success">OK</span>
+                    {% elif log.status == "error" %}
+                        <span class="badge bg-danger">Erro</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark">Alerta</span>
+                    {% endif %}
+                </td>
+                <td>{{ log.origem or "email" }}</td>
+                <td class="text-truncate" style="max-width: 420px;">{{ log.subject or "-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="small text-muted mt-3">
+    Este painel avalia os logs de backup. Saude do agent e tempo online ficam no painel Disponibilidade.
+</div>
+
+{% endblock %}

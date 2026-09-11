@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Editar Servidor</h2>
+
+<form method="POST" action="/servidores/update/{{ servidor.id }}">
+    <input type="hidden" name="cliente_id" value="{{ servidor.cliente_id }}">
+
+    <div class="mb-3">
+        <label>Nome no Log</label>
+        <input type="text" name="nome_log"
+               value="{{ servidor.nome_log }}"
+               class="form-control" required>
+    </div>
+
+    <button class="btn btn-primary mb-4">Salvar Nome</button>
+</form>
+
+<hr>
+
+<h4>Agendamentos</h4>
+
+{% if agendamentos %}
+    {% for ag in agendamentos %}
+    <form method="POST" action="/agendamento/update/{{ ag.id }}" class="border p-3 mb-3 rounded">
+
+        <div class="row">
+
+            <div class="col-md-3">
+                <label>Hora Execução</label>
+                <input type="time" name="hora_execucao"
+                       value="{{ ag.hora_execucao }}"
+                       class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label>Tolerância (min)</label>
+                <input type="number" name="tolerancia_min"
+                       value="{{ ag.tolerancia_min }}"
+                       class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+                <label>Dias</label><br>
+                {% set dias = (ag.dias_execucao or "").split(",") %}
+                {% for d, label in {
+                    "0":"Seg",
+                    "1":"Ter",
+                    "2":"Qua",
+                    "3":"Qui",
+                    "4":"Sex",
+                    "5":"Sab",
+                    "6":"Dom"
+                }.items() %}
+                    <input type="checkbox" name="dias_execucao" value="{{ d }}"
+                    {% if d in dias %}checked{% endif %}>
+                    {{ label }}
+                {% endfor %}
+            </div>
+        </div>
+
+        <button class="btn btn-success btn-sm mt-3">Salvar Agendamento</button>
+        <a href="/agendamento/delete/{{ ag.id }}/{{ servidor.id }}"
+           class="btn btn-danger btn-sm mt-3">Excluir</a>
+
+    </form>
+    {% endfor %}
+{% else %}
+    <div class="alert alert-warning">
+        Nenhum agendamento configurado.
+    </div>
+{% endif %}
+
+<hr>
+
+<h4>Adicionar Novo Agendamento</h4>
+
+<form method="POST" action="/agendamento/add/{{ servidor.id }}" class="border p-3 rounded">
+
+    <div class="row">
+
+        <div class="col-md-3">
+            <label>Hora Execução</label>
+            <input type="time" name="hora_execucao"
+                   class="form-control" required>
+        </div>
+
+        <div class="col-md-3">
+            <label>Tolerância (min)</label>
+            <input type="number" name="tolerancia_min"
+                   value="120"
+                   class="form-control" required>
+        </div>
+
+        <div class="col-md-6">
+            <label>Dias</label><br>
+            {% for d, label in {
+                "0":"Seg",
+                "1":"Ter",
+                "2":"Qua",
+                "3":"Qui",
+                "4":"Sex",
+                "5":"Sab",
+                "6":"Dom"
+            }.items() %}
+                <input type="checkbox" name="dias_execucao" value="{{ d }}">
+                {{ label }}
+            {% endfor %}
+        </div>
+    </div>
+
+    <button class="btn btn-primary mt-3">Adicionar Agendamento</button>
+
+</form>
+
+{% endblock %}

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1">{{ firewall.name }}</h2>
+        <code>{{ firewall.address }}:{{ firewall.ssh_port }}</code>
+    </div>
+    <div class="d-flex gap-2">
+        {% if session.tipo == "admin" %}
+        <form method="post" action="/pfsense/{{ firewall.id }}/check">
+            <button class="btn btn-primary">Testar agora</button>
+        </form>
+        <form method="post" action="/pfsense/{{ firewall.id }}/check">
+            <input type="hidden" name="backup" value="1">
+            <button class="btn btn-outline-primary">Backup agora</button>
+        </form>
+        <form method="post" action="/pfsense/{{ firewall.id }}/speedtest">
+            <button class="btn btn-outline-warning">Testar velocidade</button>
+        </form>
+        <a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}/edit">Editar</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if message %}<div class="alert alert-info">{{ message }}</div>{% endif %}
+{% if firewall.last_error %}<div class="alert alert-danger">{{ firewall.last_error }}</div>{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-xl"><div class="metric"><small>Status</small><strong class="fs-5">{{ firewall.last_status or "aguardando" }}</strong></div></div>
+    <div class="col-md-4 col-xl"><div class="metric"><small>Versao</small><strong class="fs-5">{{ metrics.VERSION or "-" }}</strong></div></div>
+    <div class="col-md-4 col-xl"><div class="metric"><small>Tempo ligado</small><strong class="fs-5">{{ metrics.UPTIME_LABEL or "-" }}</strong>{% if metrics.RECENT_REBOOT %}<span class="badge bg-info text-dark mt-1">reiniciado recentemente</span>{% endif %}{% if metrics.BOOT_AT %}<small>desde {{ metrics.BOOT_AT }}</small>{% endif %}</div></div>
+    <div class="col-md-4 col-xl"><div class="metric"><small>Interfaces ativas</small><strong class="fs-5">{{ metrics.INTERFACES_UP or 0 }}/{{ metrics.INTERFACES_TOTAL or 0 }}</strong></div></div>
+    <div class="col-md-4 col-xl"><div class="metric"><small>Disco</small><strong class="fs-5">{{ metrics.DISK_PERCENT or 0 }}%</strong></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">Sistema e servicos</div>
+            <div class="card-body row g-2">
+                <div class="col-6"><strong>Hostname:</strong> {{ metrics.HOSTNAME or "-" }}</div>
+                <div class="col-6"><strong>CPUs:</strong> {{ metrics.CPU_COUNT or "-" }}</div>
+                <div class="col-6"><strong>Carga:</strong> {{ metrics.LOAD1 or 0 }} / {{ metrics.LOAD5 or 0 }} / {{ metrics.LOAD15 or 0 }}</div>
+                <div class="col-6"><strong>Gateways:</strong> {{ metrics.GATEWAY_MONITORS or 0 }}</div>
+                <div class="col-6"><strong>OpenVPN:</strong> {{ metrics.OPENVPN_PROCESSES or 0 }}</div>
+                <div class="col-6"><strong>WireGuard:</strong> {{ metrics.WIREGUARD_INTERFACES or 0 }}</div>
+                <div class="col-6"><strong>IPsec:</strong> {{ metrics.IPSEC_PROCESSES or 0 }}</div>
+                <div class="col-6"><strong>Ultima verificacao:</strong> {{ firewall.last_check_at or "-" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">Inventario do config.xml</div>
+            <div class="card-body row g-2">
+                <div class="col-6"><strong>Interfaces:</strong> {{ metrics.interfaces_configured or 0 }}</div>
+                <div class="col-6"><strong>VLANs:</strong> {{ metrics.vlans or 0 }}</div>
+                <div class="col-6"><strong>Regras:</strong> {{ metrics.firewall_rules or 0 }}</div>
+                <div class="col-6"><strong>Gateways:</strong> {{ metrics.gateways_configured or 0 }}</div>
+                <div class="col-6"><strong>OpenVPN:</strong> {{ metrics.openvpn_servers_configured or 0 }}</div>
+                <div class="col-6"><strong>DHCP:</strong> {{ metrics.dhcp_scopes or 0 }}</div>
+                <div class="col-6"><strong>IPsec:</strong> {{ metrics.ipsec_phase1 or 0 }}/{{ metrics.ipsec_phase2 or 0 }}</div>
+                <div class="col-6"><strong>Ultimo backup:</strong> {{ firewall.last_backup_at or "-" }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-2">
+    <div><h3 class="mb-0">Links de Internet</h3><div class="text-muted">Comparativo por operadora, interface e velocidade contratada.</div></div>
+    {% if session.tipo == "admin" %}
+    <div class="d-flex gap-2">
+        <form method="post" action="/pfsense/{{ firewall.id }}/links/discover"><button class="btn btn-outline-primary">Descobrir WANs</button></form>
+        <a class="btn btn-primary" href="/pfsense/{{ firewall.id }}/links/new">Adicionar link</a>
+        <a class="btn btn-outline-secondary" target="_blank" href="/pfsense/{{ firewall.id }}/internet-report?days=30">Relatório comparativo</a>
+    </div>
+    {% endif %}
+</div>
+{% if links %}
+<div class="table-responsive mb-4">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light"><tr><th>Link</th><th>Contrato</th><th>Sonda</th><th>Último speedtest</th><th>Entrega</th><th>Diagnóstico</th><th></th></tr></thead>
+        <tbody>
+        {% for link in links %}
+        {% set test = link.latest_speedtest %}{% set probe = link.latest_probe %}
+        <tr>
+            <td><strong>{{ link.name }}</strong><div>{{ link.provider }} · {{ 'Dedicado full' if link.link_type == 'dedicated' else 'Banda larga' }}</div><code>{{ link.interface_key }} / {{ link.device_name }}</code></td>
+            <td>{% if link.contracted_down_mbps and link.contracted_up_mbps %}↓ {{ link.contracted_down_mbps }} / ↑ {{ link.contracted_up_mbps }} Mbps{% else %}<span class="badge bg-warning text-dark">preencher contrato</span>{% endif %}</td>
+            <td>
+                {% if link.last_probe_status == 'queued' %}<span class="badge bg-warning text-dark">na fila</span>
+                {% elif probe and probe.status == 'online' %}<span class="badge {{ 'bg-warning text-dark' if probe.packet_loss_percent and probe.packet_loss_percent > 20 else 'bg-success' }}">online{{ ' / ICMP degradado' if probe.packet_loss_percent and probe.packet_loss_percent > 20 else '' }}</span><div>{{ (probe.latency_ms ~ ' ms') if probe.latency_ms is not none else 'ping sem resposta' }} · perda {{ probe.packet_loss_percent }}%</div>
+                {% elif probe %}<span class="badge bg-danger">{{ probe.status }}</span><div class="small text-danger">{{ probe.error or 'sem resposta' }}</div>
+                {% else %}<span class="badge bg-secondary">aguardando</span>{% endif %}
+            </td>
+            <td>{% if link.last_speedtest_status == 'queued' %}<span class="badge bg-warning text-dark">executando em segundo plano</span>{% elif test and test.status == 'success' %}↓ {{ test.download_mbps }} / ↑ {{ test.upload_mbps }} Mbps<div>Ping {{ test.ping_ms }} ms</div>{% elif test %}<span class="badge bg-danger">falha</span>{% else %}-{% endif %}</td>
+            <td>{% if test and test.delivered_down_percent is not none %}↓ {{ test.delivered_down_percent }}% / ↑ {{ test.delivered_up_percent }}%{% else %}-{% endif %}</td>
+            <td>
+                {% if not link.contracted_down_mbps %}<span class="badge bg-warning text-dark">cadastro incompleto</span>
+                {% elif test and test.status == 'success' and test.delivered_down_percent is not none and test.delivered_up_percent is not none and (test.delivered_down_percent < link.minimum_delivery_percent or test.delivered_up_percent < link.minimum_delivery_percent) %}<span class="badge bg-danger">abaixo do contratado</span>
+                {% elif test and test.status == 'success' and test.delivered_down_percent is not none and test.delivered_up_percent is not none %}<span class="badge bg-success">dentro do esperado</span>
+                {% elif test and test.status == 'success' %}<span class="badge bg-warning text-dark">refaça o speedtest</span>
+                {% elif test and test.status == 'error' %}<span class="badge bg-danger">teste falhou</span>
+                {% else %}<span class="badge bg-secondary">sem medição</span>{% endif %}
+            </td>
+            <td>{% if session.tipo == "admin" %}<div class="d-flex flex-wrap gap-1"><a class="btn btn-sm btn-outline-secondary" href="/pfsense/{{ firewall.id }}/links/{{ link.id }}/edit">Editar</a><form method="post" action="/pfsense/{{ firewall.id }}/links/{{ link.id }}/probe"><button class="btn btn-sm btn-outline-primary">Sonda</button></form><form method="post" action="/pfsense/{{ firewall.id }}/links/{{ link.id }}/speedtest"><button class="btn btn-sm btn-outline-warning">Speedtest</button></form></div>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">Nenhum link cadastrado. Use “Descobrir WANs” para importar as interfaces com gateway.</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h3 class="mb-0">Velocidade da rota padrão</h3>
+    <span class="badge {{ 'bg-success' if firewall.last_speedtest_status == 'success' else ('bg-danger' if firewall.last_speedtest_status == 'error' else ('bg-warning text-dark' if firewall.last_speedtest_status == 'queued' else 'bg-secondary')) }}">
+        {{ firewall.last_speedtest_status or 'aguardando' }}
+    </span>
+</div>
+{% if firewall.last_speedtest_error %}<div class="alert alert-danger py-2">{{ firewall.last_speedtest_error }}</div>{% endif %}
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="metric"><small>Download</small><strong class="fs-4">{{ ("%.2f"|format(latest_speedtest.download_mbps)) ~ ' Mbps' if latest_speedtest and latest_speedtest.status == 'success' else '-' }}</strong></div></div>
+    <div class="col-md-3"><div class="metric"><small>Upload</small><strong class="fs-4">{{ ("%.2f"|format(latest_speedtest.upload_mbps)) ~ ' Mbps' if latest_speedtest and latest_speedtest.status == 'success' else '-' }}</strong></div></div>
+    <div class="col-md-3"><div class="metric"><small>Ping</small><strong class="fs-4">{{ ("%.2f"|format(latest_speedtest.ping_ms)) ~ ' ms' if latest_speedtest and latest_speedtest.status == 'success' else '-' }}</strong></div></div>
+    <div class="col-md-3"><div class="metric"><small>Último teste</small><strong class="fs-6">{{ firewall.last_speedtest_at or '-' }}</strong><div class="small text-muted">A cada {{ firewall.speedtest_interval_hours or 6 }}h · {{ 'ativo' if firewall.speedtest_enabled else 'manual' }}</div></div></div>
+</div>
+{% if speedtests %}
+<div class="table-responsive mb-4">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light"><tr><th>Data</th><th>Status</th><th>Download</th><th>Upload</th><th>Ping</th><th>Servidor do teste</th><th>Erro</th></tr></thead>
+        <tbody>
+        {% for test in speedtests %}
+            <tr>
+                <td>{{ test.tested_at }}</td>
+                <td><span class="badge {{ 'bg-success' if test.status == 'success' else 'bg-danger' }}">{{ test.status }}</span></td>
+                <td>{{ ("%.2f"|format(test.download_mbps)) ~ ' Mbps' if test.download_mbps is not none else '-' }}</td>
+                <td>{{ ("%.2f"|format(test.upload_mbps)) ~ ' Mbps' if test.upload_mbps is not none else '-' }}</td>
+                <td>{{ ("%.2f"|format(test.ping_ms)) ~ ' ms' if test.ping_ms is not none else '-' }}</td>
+                <td>{{ test.server_sponsor or '-' }}{% if test.server_name %} · {{ test.server_name }}{% endif %}</td>
+                <td class="small text-danger">{{ test.error or '-' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-secondary">Nenhum teste de velocidade executado ainda.</div>
+{% endif %}
+
+<h3>Backups criptografados</h3>
+{% if backups %}
+<table class="table table-bordered table-hover align-middle">
+    <thead class="table-light"><tr><th>Data</th><th>Hash</th><th>Tamanho</th><th>Alterado</th><th>Local</th><th>FTP</th><th></th></tr></thead>
+    <tbody>
+    {% for backup in backups %}
+        <tr>
+            <td>{{ backup.created_at }}</td>
+            <td><code>{{ backup.config_hash[:16] }}...</code></td>
+            <td>{{ backup.size_bytes }} bytes</td>
+            <td>{{ "sim" if backup.changed else "nao" }}</td>
+            <td><span class="badge bg-success">{{ backup.status }}</span></td>
+            <td>
+                {% if backup.remote_status == "success" %}
+                    <span class="badge bg-success">enviado</span><div class="small text-muted">{{ backup.remote_uploaded_at }}</div>
+                {% elif backup.remote_status == "error" %}
+                    <span class="badge bg-danger">falha</span><div class="small text-danger">{{ backup.remote_error }}</div>
+                {% elif backup.remote_status == "disabled" %}
+                    <span class="badge bg-secondary">desativado</span>
+                {% else %}
+                    <span class="badge bg-secondary">somente local</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if session.tipo == "admin" %}
+                <div class="d-flex gap-1">
+                    <a class="btn btn-sm btn-outline-primary" href="/pfsense/{{ firewall.id }}/backups/{{ backup.id }}/download">Baixar XML</a>
+                    {% if backup.remote_status != "success" %}
+                    <form method="post" action="/pfsense/{{ firewall.id }}/backups/{{ backup.id }}/upload"><button class="btn btn-sm btn-outline-secondary">Enviar FTP</button></form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}<div class="alert alert-info">Nenhum backup criado.</div>{% endif %}
+
+<h3 class="mt-4">Historico recente</h3>
+{% if checks %}
+<table class="table table-bordered table-hover align-middle">
+    <thead class="table-light"><tr><th>Data</th><th>Status</th><th>Latencia</th><th>Versao</th><th>Interfaces</th><th>Disco</th><th>Erro</th></tr></thead>
+    <tbody>
+    {% for check in checks %}
+        <tr>
+            <td>{{ check.checked_at }}</td>
+            <td><span class="badge {{ 'bg-success' if check.status == 'online' else 'bg-danger' }}">{{ check.status }}</span></td>
+            <td>{{ check.latency_ms or 0 }} ms</td>
+            <td>{{ check.version or "-" }}</td>
+            <td>{{ check.interfaces_up or 0 }}/{{ check.interfaces_total or 0 }}</td>
+            <td>{{ check.disk_percent or 0 }}%</td>
+            <td class="small">{{ check.error or "-" }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

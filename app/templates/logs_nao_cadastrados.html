@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Servidores Detectados Nao Cadastrados</h2>
+
+{% if logs %}
+<table class="table table-striped align-middle">
+    <thead>
+        <tr>
+            <th>Servidor</th>
+            <th>Ultima data</th>
+            <th>Ocorrencias</th>
+            <th>Assunto</th>
+            <th>Acao</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in logs %}
+        <tr>
+            <td><strong>{{ log.servidor_log }}</strong></td>
+            <td>{{ log.ultima_data or "-" }}</td>
+            <td>{{ log.ocorrencias }}</td>
+            <td class="text-muted">{{ log.subject or "-" }}</td>
+            <td>
+                <a href="/servidores/novo/{{ log.servidor_log }}"
+                   class="btn btn-success btn-sm">
+                   Cadastrar
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="alert alert-success">
+    Todos os servidores detectados ja estao cadastrados.
+</div>
+{% endif %}
+
+{% endblock %}

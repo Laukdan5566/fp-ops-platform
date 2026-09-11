@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>{{ "Editar pfSense" if firewall else "Cadastrar pfSense" }}</h2>
+<p class="text-muted">Credenciais sao criptografadas antes de serem gravadas. Segredos existentes nunca sao exibidos.</p>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<form method="post" action="{{ '/pfsense/' ~ firewall.id ~ '/update' if firewall else '/pfsense/add' }}" class="card shadow-sm">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-5">
+                <label class="form-label">Nome</label>
+                <input name="name" class="form-control" required value="{{ firewall.name if firewall and firewall.name else '' }}" placeholder="Firewall Matriz">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Endereco ou hostname</label>
+                <input name="address" class="form-control" required value="{{ firewall.address if firewall and firewall.address else '' }}" placeholder="10.11.11.1">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Porta SSH</label>
+                <input name="ssh_port" type="number" min="1" max="65535" class="form-control" required value="{{ firewall.ssh_port if firewall and firewall.ssh_port else 22 }}">
+            </div>
+
+            <div class="col-md-5">
+                <label class="form-label">Usuario SSH</label>
+                <input name="username" class="form-control" {% if not firewall %}required{% endif %} placeholder="{{ 'Deixe vazio para manter' if firewall else 'monitor' }}">
+                {% if firewall %}<div class="form-text">O usuario atual esta criptografado e nao e exibido.</div>{% endif %}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Autenticacao</label>
+                <select name="auth_type" id="auth_type" class="form-select">
+                    <option value="password" {% if not firewall or firewall.auth_type == 'password' %}selected{% endif %}>Usuario e senha</option>
+                    <option value="ssh_key" {% if firewall and firewall.auth_type == 'ssh_key' %}selected{% endif %}>Chave SSH</option>
+                </select>
+            </div>
+            <div class="col-md-4" id="password_auth_fields">
+                <label class="form-label">Senha SSH</label>
+                <input name="password" id="ssh_password" type="password" class="form-control" autocomplete="new-password" placeholder="{{ 'Deixe vazio para manter a senha criptografada' if firewall else 'Senha do usuario SSH' }}">
+                <div class="form-text">A senha e criptografada e nunca volta para esta tela.</div>
+            </div>
+
+            <div class="col-12" id="key_auth_fields">
+                <label class="form-label">Chave privada SSH</label>
+                <textarea name="private_key" id="ssh_private_key" class="form-control font-monospace" rows="6" placeholder="{{ 'Deixe vazio para manter a chave criptografada' if firewall else '-----BEGIN OPENSSH PRIVATE KEY-----' }}"></textarea>
+                <div class="form-text">A chave e criptografada no servidor e nunca volta para esta tela.</div>
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Fingerprint da chave do servidor</label>
+                <input name="host_key_fingerprint" class="form-control font-monospace" value="{{ firewall.host_key_fingerprint if firewall and firewall.host_key_fingerprint else '' }}" placeholder="Capturado automaticamente ao salvar">
+                <div class="form-text">Pode deixar vazio no primeiro cadastro. A plataforma captura e fixa a identidade SSH do servidor para evitar conexoes com outro equipamento.</div>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Monitorar a cada (minutos)</label>
+                <input name="monitor_interval_minutes" type="number" min="1" max="1440" class="form-control" value="{{ firewall.monitor_interval_minutes if firewall and firewall.monitor_interval_minutes else 5 }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Backup a cada (horas)</label>
+                <input name="backup_interval_hours" type="number" min="1" max="720" class="form-control" value="{{ firewall.backup_interval_hours if firewall and firewall.backup_interval_hours else 24 }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Retencao dos backups (dias)</label>
+                <input name="backup_retention_days" type="number" min="1" max="3650" class="form-control" value="{{ firewall.backup_retention_days if firewall and firewall.backup_retention_days else 30 }}">
+            </div>
+
+            <div class="col-md-8">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="speedtest_enabled" id="speedtest_enabled" {% if not firewall or firewall.speedtest_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="speedtest_enabled"><strong>Medir velocidade da Internet periodicamente</strong></label>
+                    <div class="form-text">O teste roda no próprio pfSense e consome tráfego de download e upload.</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Teste de velocidade a cada (horas)</label>
+                <input name="speedtest_interval_hours" type="number" min="1" max="168" class="form-control" value="{{ firewall.speedtest_interval_hours if firewall and firewall.speedtest_interval_hours else 6 }}">
+            </div>
+
+            <div class="col-12">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="active" id="active" {% if not firewall or firewall.active %}checked{% endif %}>
+                    <label class="form-check-label" for="active">Monitoramento ativo</label>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-footer bg-white d-flex gap-2">
+        <button class="btn btn-primary">Salvar</button>
+        <a class="btn btn-outline-secondary" href="/pfsense">Cancelar</a>
+    </div>
+</form>
+
+<script>
+(() => {
+    const authType = document.getElementById('auth_type');
+    const passwordFields = document.getElementById('password_auth_fields');
+    const keyFields = document.getElementById('key_auth_fields');
+    const password = document.getElementById('ssh_password');
+    const privateKey = document.getElementById('ssh_private_key');
+    const hasPassword = {{ 'true' if firewall and firewall.has_password else 'false' }};
+    const hasPrivateKey = {{ 'true' if firewall and firewall.has_private_key else 'false' }};
+    function refreshAuthFields() {
+        const passwordMode = authType.value === 'password';
+        passwordFields.classList.toggle('d-none', !passwordMode);
+        keyFields.classList.toggle('d-none', passwordMode);
+        password.required = passwordMode && !hasPassword;
+        privateKey.required = !passwordMode && !hasPrivateKey;
+    }
+    authType.addEventListener('change', refreshAuthFields);
+    refreshAuthFields();
+})();
+</script>
+
+{% endblock %}

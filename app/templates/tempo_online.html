@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set periodo_label = "24h" if horas == 24 else ("7 dias" if horas == 168 else "30 dias") %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h2 class="mb-1">Tempo online</h2>
+        <div class="text-muted">Disponibilidade dos agents no periodo selecionado. Atualizado em {{ agora }}</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-primary btn-sm" target="_blank" href="/tempo-online/relatorio?cliente_id={{ cliente_id }}&horas={{ horas }}">Visualizar relatorio</a>
+        <a class="btn btn-primary btn-sm" href="/tempo-online/relatorio?cliente_id={{ cliente_id }}&horas={{ horas }}&download=1">Baixar relatorio</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/tempo-online">Atualizar</a>
+    </div>
+</div>
+
+<form method="GET" action="/tempo-online" class="row g-2 align-items-end mb-4">
+    <div class="col-lg-5 col-md-6">
+        <label class="form-label">Cliente</label>
+        <select name="cliente_id" class="form-select">
+            <option value="">Todos os clientes</option>
+            {% for cliente in clientes %}
+                <option value="{{ cliente.id }}" {% if cliente_id|string == cliente.id|string %}selected{% endif %}>
+                    {{ cliente.nome_exibicao }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-lg-3 col-md-4">
+        <label class="form-label">Periodo</label>
+        <select name="horas" class="form-select">
+            <option value="24" {% if horas == 24 %}selected{% endif %}>Ultimas 24h</option>
+            <option value="168" {% if horas == 168 %}selected{% endif %}>Ultimos 7 dias</option>
+            <option value="720" {% if horas == 720 %}selected{% endif %}>Ultimos 30 dias</option>
+        </select>
+    </div>
+    <div class="col-lg-2 col-md-2">
+        <button class="btn btn-primary w-100">Filtrar</button>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Total agents</small>
+            <strong class="fs-4">{{ resumo.total }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Online agora</small>
+            <strong class="text-success fs-4">{{ resumo.online }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Offline agora</small>
+            <strong class="text-danger fs-4">{{ resumo.offline }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="metric">
+            <small>Sem dados</small>
+            <strong class="text-secondary fs-4">{{ resumo.sem_dados }}</strong>
+        </div>
+    </div>
+    <div class="col-md-4 col-12">
+        <div class="metric">
+            <small>Disponibilidade media - {{ periodo_label }}</small>
+            {% if resumo.media is not none %}
+                <strong class="fs-4">{{ "%.2f"|format(resumo.media) }}%</strong>
+            {% else %}
+                <strong class="text-muted fs-4">sem historico</strong>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Cliente</th>
+                <th>Servidor / Log</th>
+                <th>Estado atual</th>
+                <th>Disponibilidade {{ periodo_label }}</th>
+                <th>Tempo online</th>
+                <th>Tempo off</th>
+                <th>24h</th>
+                <th>7d</th>
+                <th>30d</th>
+                <th>Ultimo contato</th>
+                <th>Versao</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in linhas %}
+            <tr>
+                <td>{{ row.cliente }}</td>
+                <td>
+                    <a href="/servidor/{{ row.nome_log }}"><strong>{{ row.nome_log }}</strong></a>
+                    {% if row.agente.hostname %}
+                        <div class="small text-muted">{{ row.agente.hostname }}{% if row.agente.ip_local %} - {{ row.agente.ip_local }}{% endif %}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.streak.estado == "online" %}
+                        <span class="badge bg-success">Online</span>
+                        <div class="small text-muted">ativo ha {{ formatar_idade(row.streak.desde_min) }}</div>
+                    {% elif row.streak.estado == "offline" %}
+                        <span class="badge bg-danger">Offline</span>
+                        <div class="small text-muted">off ha {{ formatar_idade(row.streak.desde_min) }}</div>
+                    {% else %}
+                        <span class="badge bg-secondary">Sem dados</span>
+                        <div class="small text-muted">aguardando heartbeat</div>
+                    {% endif %}
+                </td>
+                <td style="min-width: 180px;">
+                    {% if row.periodo.percentual is not none %}
+                        {% set pct = row.periodo.percentual %}
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span>{{ "%.2f"|format(pct) }}%</span>
+                            <span class="text-muted">{{ row.eventos }} sinais</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar {% if pct >= 98 %}bg-success{% elif pct >= 90 %}bg-warning{% else %}bg-danger{% endif %}" style="width: {{ pct }}%"></div>
+                        </div>
+                    {% else %}
+                        <span class="text-muted">sem historico</span>
+                    {% endif %}
+                </td>
+                <td>{{ formatar_idade(row.periodo.online_min) }}</td>
+                <td>
+                    {% if row.periodo.offline_min > 0 %}
+                        <span class="text-danger">{{ formatar_idade(row.periodo.offline_min) }}</span>
+                    {% else %}
+                        <span class="text-success">0 min</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.metricas["24h"].percentual is not none %}
+                        {{ "%.1f"|format(row.metricas["24h"].percentual) }}%
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.metricas["7d"].percentual is not none %}
+                        {{ "%.1f"|format(row.metricas["7d"].percentual) }}%
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.metricas["30d"].percentual is not none %}
+                        {{ "%.1f"|format(row.metricas["30d"].percentual) }}%
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    {{ row.agente.last_seen or "-" }}
+                    {% if row.agente.idade_min is not none %}
+                        <div class="small text-muted">ha {{ formatar_idade(row.agente.idade_min) }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.agente.version %}
+                        v{{ row.agente.version }}
+                        {% if row.agente.update_available %}
+                            <div><span class="badge bg-info text-dark">Atualizar {{ row.agente.latest_version }}</span></div>
+                        {% endif %}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="11" class="text-center text-muted py-4">Nenhum servidor ativo encontrado.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="small text-muted mt-3">
+    O calculo considera heartbeat recente como online. Se o agent parar de responder por mais de 10 minutos, o tempo seguinte entra como offline.
+</div>
+
+{% endblock %}

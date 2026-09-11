@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <h2 class="mb-1">Administracao</h2>
+        <div class="text-muted">Usuarios, sessoes e retencao de dados</div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Criar usuario</div>
+            <div class="card-body">
+                <form method="POST" action="/admin/users/add" class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Usuario</label>
+                        <input name="username" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Senha</label>
+                        <input name="senha" type="password" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Tipo</label>
+                        <select name="tipo" class="form-select">
+                            <option value="operador">Operador</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Logins simultaneos</label>
+                        <input name="max_sessoes" type="number" min="1" value="1" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary">Criar usuario</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header">Retencao de dados</div>
+            <div class="card-body">
+                <form method="POST" action="/admin/retention/save" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Logs completos</label>
+                        <input name="logs_full_days" type="number" min="1" value="{{ retention.logs_full_days }}" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Nao cadastrados</label>
+                        <input name="unknown_logs_days" type="number" min="1" value="{{ retention.unknown_logs_days }}" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Worker runs</label>
+                        <input name="worker_runs_days" type="number" min="1" value="{{ retention.worker_runs_days }}" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Alertas Zammad</label>
+                        <input name="zammad_alerts_days" type="number" min="1" value="{{ retention.zammad_alerts_days }}" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Historico heartbeats</label>
+                        <input name="heartbeat_history_days" type="number" min="1" value="{{ retention.heartbeat_history_days or 90 }}" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Historico de sessoes</label>
+                        <input name="session_history_days" type="number" min="1" value="{{ retention.session_history_days }}" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Rotina diaria</label>
+                        <select name="auto_enabled" class="form-select">
+                            <option value="1" {% if retention.auto_enabled %}selected{% endif %}>Ativa</option>
+                            <option value="0" {% if not retention.auto_enabled %}selected{% endif %}>Desativada</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button class="btn btn-primary">Salvar retencao</button>
+                    </div>
+                </form>
+                <form method="POST" action="/admin/retention/run" class="mt-2">
+                    <button class="btn btn-outline-danger">Executar limpeza agora</button>
+                </form>
+                <div class="small text-muted mt-2">
+                    Logs antigos mantem data, status, origem, assunto e hash; somente o conteudo bruto e removido.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="h5">Usuarios</h3>
+<div class="table-responsive mb-4">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Usuario</th>
+                <th>Tipo</th>
+                <th>Status</th>
+                <th>Logins simultaneos</th>
+                <th>Sessoes ativas</th>
+                <th>Ultimo acesso</th>
+                <th>Senha nova</th>
+                <th>Acoes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in usuarios %}
+            <tr>
+                <form method="POST" action="/admin/users/{{ user.id }}/update">
+                    <td><strong>{{ user.username }}</strong></td>
+                    <td>
+                        <select name="tipo" class="form-select form-select-sm">
+                            <option value="operador" {% if user.tipo != "admin" %}selected{% endif %}>Operador</option>
+                            <option value="admin" {% if user.tipo == "admin" %}selected{% endif %}>Admin</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select name="ativo" class="form-select form-select-sm">
+                            <option value="1" {% if user.ativo %}selected{% endif %}>Ativo</option>
+                            <option value="0" {% if not user.ativo %}selected{% endif %}>Inativo</option>
+                        </select>
+                    </td>
+                    <td style="max-width: 140px;">
+                        <input name="max_sessoes" type="number" min="1" value="{{ user.max_sessoes or 1 }}" class="form-control form-control-sm">
+                    </td>
+                    <td>{{ user.sessoes_ativas }}</td>
+                    <td>{{ user.ultimo_acesso or "-" }}</td>
+                    <td><input name="senha" type="password" class="form-control form-control-sm" placeholder="manter"></td>
+                    <td class="d-flex gap-2">
+                        <button class="btn btn-sm btn-primary">Salvar</button>
+                </form>
+                        <form method="POST" action="/admin/users/{{ user.id }}/sessions/clear">
+                            <button class="btn btn-sm btn-outline-secondary">Encerrar sessoes</button>
+                        </form>
+                    </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <h3 class="h5">Sessoes ativas</h3>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Usuario</th>
+                        <th>IP</th>
+                        <th>Criada em</th>
+                        <th>Ultimo contato</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sessao in sessoes %}
+                    <tr>
+                        <td>{{ sessao.username }}</td>
+                        <td>{{ sessao.ip or "-" }}</td>
+                        <td>{{ sessao.created_at }}</td>
+                        <td>{{ sessao.last_seen }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <h3 class="h5">Ultimas retencoes</h3>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Inicio</th>
+                        <th>Status</th>
+                        <th>Detalhe</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in retencoes %}
+                    <tr>
+                        <td>{{ run.started_at }}</td>
+                        <td>
+                            {% if run.status == "success" %}
+                                <span class="badge bg-success">success</span>
+                            {% elif run.status == "running" %}
+                                <span class="badge bg-info text-dark">running</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ run.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-truncate" style="max-width: 420px;">{{ run.detail or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

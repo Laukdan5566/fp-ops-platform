@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Agents / Chaves</h2>
+
+<div class="alert alert-info">
+    O fluxo recomendado agora e baixar o agent direto na tela de <strong>Clientes</strong>:
+    <strong>Agent EXE</strong> para Windows novo ou <strong>EXE WS2012</strong> para Windows Server 2012.
+    A chave API ja vai embutida no instalador.
+</div>
+
+{% if novo_token %}
+<div class="alert alert-warning">
+    <strong>Nova chave gerada:</strong>
+    <code>{{ novo_token }}</code>
+    <div class="small mt-2">Copie agora. Depois ela nao sera exibida novamente.</div>
+</div>
+{% endif %}
+
+<details class="card p-4 mb-4">
+    <summary class="fw-bold">Gerar chave manualmente</summary>
+    <div class="text-muted small mt-2 mb-3">Uso avancado para testes/API externa. Para instalar agent, prefira os botoes na tela de Clientes.</div>
+    <form method="post" action="/api-keys/create">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Nome</label>
+                <input name="nome" class="form-control" placeholder="Cliente ou servidor">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Cliente autorizado</label>
+                <select name="cliente_id" class="form-select">
+                    <option value="">Qualquer cliente</option>
+                    {% for cliente in clientes %}
+                        <option value="{{ cliente.id }}">{{ cliente.nome_exibicao }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Servidor autorizado</label>
+                <select name="servidor_log" class="form-select">
+                    <option value="">Usar escopo do cliente</option>
+                    {% for servidor in servidores %}
+                        <option value="{{ servidor.nome_log }}">{{ servidor.nome_exibicao }} - {{ servidor.nome_log }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Servidor tem prioridade sobre cliente.</div>
+            </div>
+
+            <div class="col-md-2 align-self-end">
+                <button class="btn btn-primary w-100">Gerar chave</button>
+            </div>
+        </div>
+    </form>
+</details>
+
+<h3>Chaves cadastradas</h3>
+
+{% if keys %}
+<table class="table table-bordered table-hover align-middle">
+    <thead class="table-light">
+        <tr>
+            <th>Nome</th>
+            <th>Escopo</th>
+            <th>Status</th>
+            <th>Criada em</th>
+            <th>Ultimo uso</th>
+            <th>Acao</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for key in keys %}
+        <tr>
+            <td>{{ key.nome }}</td>
+            <td>
+                {% if key.servidor_log %}
+                    Servidor: {{ key.servidor_log }}
+                {% elif key.cliente_id %}
+                    Cliente: {{ key.nome_exibicao }}
+                {% else %}
+                    Qualquer servidor cadastrado
+                {% endif %}
+            </td>
+            <td>
+                {% if key.ativo %}
+                    <span class="badge bg-success">ativa</span>
+                {% else %}
+                    <span class="badge bg-secondary">inativa</span>
+                {% endif %}
+            </td>
+            <td>{{ key.created_at }}</td>
+            <td>{{ key.last_used_at or "-" }}</td>
+            <td>
+                <a class="btn btn-sm btn-outline-secondary" href="/api-keys/toggle/{{ key.id }}">
+                    {% if key.ativo %}Desativar{% else %}Ativar{% endif %}
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="alert alert-info">Nenhuma chave API cadastrada.</div>
+{% endif %}
+
+<details class="card p-4 mt-4">
+    <summary class="fw-bold">Downloads avancados / config manual</summary>
+    <p class="text-muted mt-2">Use apenas quando precisar montar uma config fora do fluxo por cliente.</p>
+
+    <form method="post" action="/api-keys/config/custom">
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Nome do pacote</label>
+                <input name="nome_pacote" class="form-control" placeholder="BORPLAST">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Pasta local dos logs</label>
+                <input name="log_path" class="form-control" value="C:\ProgramData\IperiusBackup\Logs">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="usar_filtro_conteudo" value="1" id="usarFiltroConteudo" checked>
+                    <label class="form-check-label" for="usarFiltroConteudo">Filtrar por conteudo</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="border rounded bg-white" style="max-height: 360px; overflow: auto;">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 48px;"></th>
+                        <th>Cliente</th>
+                        <th>Servidor / log</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for servidor in servidores %}
+                    <tr>
+                        <td>
+                            <input class="form-check-input" type="checkbox" name="servidor_ids" value="{{ servidor.id }}">
+                        </td>
+                        <td>{{ servidor.nome_exibicao }}</td>
+                        <td><code>{{ servidor.nome_log }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" formaction="/api-keys/config/custom">Baixar config selecionada</button>
+            <button class="btn btn-outline-primary btn-sm" formaction="/api-keys/package/legacy-ws2012">Baixar pacote WS2012 pronto</button>
+            <a class="btn btn-outline-primary btn-sm" href="/static/backup-monitor-agent.zip">Baixar kit do agente</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/static/backup-monitor-agent-legacy-ws2012.zip">Kit legacy WS2012</a>
+        </div>
+    </form>
+</details>
+
+<details class="card p-4 mt-4">
+    <summary class="fw-bold">Endpoints da API</summary>
+    <p class="mb-2"><code>POST /api/logs/ingest</code></p>
+    <p class="mb-2"><code>POST /api/logs/exists</code></p>
+    <p class="mb-2"><code>POST /api/agent/heartbeat</code></p>
+    <p class="text-muted mb-0">Use <code>Authorization: Bearer SUA_CHAVE</code> ou <code>X-API-Key: SUA_CHAVE</code>.</p>
+    <p class="mt-3 mb-0">
+        <a class="btn btn-sm btn-outline-primary" href="/static/backup-monitor-agent.zip">Baixar kit do agente</a>
+        <a class="btn btn-sm btn-outline-secondary" href="/static/BackupMonitorAgentSetup.exe">Baixar somente EXE</a>
+        <a class="btn btn-sm btn-outline-secondary" href="/static/backup-monitor-agent-legacy-ws2012.zip">Kit legacy WS2012</a>
+        <a class="btn btn-sm btn-outline-secondary" href="/static/BackupMonitorAgentSetupLegacy2012.exe">EXE legacy WS2012</a>
+    </p>
+</details>
+
+{% endblock %}

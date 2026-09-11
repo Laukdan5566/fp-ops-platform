@@ -66,6 +66,8 @@ temp/
 
 # Arquivos operacionais que podem conter dados de clientes
 agent.config*.json
+!agents/agent.config.example.json
+!agents/agent.config.multi.example.json
 config.xml
 known_hosts
 id_rsa*
