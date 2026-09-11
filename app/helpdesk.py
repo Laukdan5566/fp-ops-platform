@@ -390,6 +390,127 @@ def toggle_contact(contact_id):
     return redirect("/helpdesk/contacts")
 
 
+def reminder_settings_context(db):
+    config = db.execute("SELECT * FROM helpdesk_reminder_config WHERE id=1").fetchone()
+    recipients = db.execute("""
+        SELECT n.*, u.username
+        FROM helpdesk_staff_notifications n
+        JOIN usuarios u ON u.id=n.user_id
+        ORDER BY n.ativo DESC, u.username
+    """).fetchall()
+    users = db.execute("""
+        SELECT u.id, u.username
+        FROM usuarios u
+        WHERE u.ativo=1
+        ORDER BY u.username
+    """).fetchall()
+    ticketz = db.execute("SELECT ativo, token_enc FROM ticketz_config WHERE id=1").fetchone()
+    return config, recipients, users, bool(ticketz and ticketz["ativo"] and ticketz["token_enc"])
+
+
+@bp.route("/helpdesk/reminders")
+@login_required
+@admin_required
+def reminders():
+    db = get_db()
+    config, recipients, users, ticketz_ready = reminder_settings_context(db)
+    db.close()
+    return render_template(
+        "helpdesk/reminders.html", config=config, recipients=recipients,
+        users=users, ticketz_ready=ticketz_ready,
+    )
+
+
+@bp.route("/helpdesk/reminders/config", methods=["POST"])
+@login_required
+@admin_required
+def save_reminder_config():
+    require_csrf()
+    initial = max(10, min(1440, clean_int(request.form.get("unassigned_initial_minutes")) or 30))
+    interval = max(60, min(1440, clean_int(request.form.get("reminder_interval_minutes")) or 180))
+    daily_limit = max(1, min(8, clean_int(request.form.get("daily_limit")) or 3))
+    start_hour = max(0, min(23, clean_int(request.form.get("business_start_hour")) or 8))
+    end_hour = max(1, min(24, clean_int(request.form.get("business_end_hour")) or 18))
+    if end_hour <= start_hour:
+        abort(400, "O fim do expediente deve ser posterior ao inicio.")
+    base_url = clean_text(request.form.get("base_url"), 500, required=True).rstrip("/")
+    parsed = urlparse(base_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        abort(400, "A URL do FP Ops deve usar HTTPS.")
+    db = get_db()
+    db.execute("""
+        UPDATE helpdesk_reminder_config
+        SET ativo=?, unassigned_initial_minutes=?, reminder_interval_minutes=?,
+            daily_limit=?, business_start_hour=?, business_end_hour=?,
+            weekdays_only=?, base_url=?, updated_at=?
+        WHERE id=1
+    """, (
+        1 if request.form.get("ativo") == "1" else 0,
+        initial, interval, daily_limit, start_hour, end_hour,
+        1 if request.form.get("weekdays_only") == "1" else 0,
+        base_url, now_sql(),
+    ))
+    db.commit()
+    db.close()
+    return redirect("/helpdesk/reminders")
+
+
+@bp.route("/helpdesk/reminders/recipients", methods=["POST"])
+@login_required
+@admin_required
+def save_reminder_recipient():
+    require_csrf()
+    user_id = clean_int(request.form.get("user_id"))
+    phone = normalize_phone(request.form.get("telefone"))
+    if not user_id or not phone or (not phone.endswith("@g.us") and not 12 <= len(phone) <= 15):
+        abort(400, "Selecione o usuario e informe WhatsApp com DDI e DDD.")
+    db = get_db()
+    user = db.execute("SELECT id FROM usuarios WHERE id=? AND ativo=1", (user_id,)).fetchone()
+    if not user:
+        db.close()
+        abort(400, "Usuario invalido.")
+    existing = db.execute("SELECT id FROM helpdesk_staff_notifications WHERE user_id=?", (user_id,)).fetchone()
+    values = (
+        phone,
+        1 if request.form.get("notify_unassigned") == "1" else 0,
+        1 if request.form.get("notify_own") == "1" else 0,
+        1 if request.form.get("notify_all_overdue") == "1" else 0,
+        now_sql(),
+    )
+    if existing:
+        db.execute("""
+            UPDATE helpdesk_staff_notifications
+            SET telefone=?, notify_unassigned=?, notify_own=?, notify_all_overdue=?, ativo=1, updated_at=?
+            WHERE id=?
+        """, values + (existing["id"],))
+    else:
+        db.execute("""
+            INSERT INTO helpdesk_staff_notifications (
+                user_id, telefone, notify_unassigned, notify_own, notify_all_overdue,
+                ativo, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        """, (user_id,) + values[:4] + (values[4], values[4]))
+    db.commit()
+    db.close()
+    return redirect("/helpdesk/reminders")
+
+
+@bp.route("/helpdesk/reminders/recipients/<int:recipient_id>/toggle", methods=["POST"])
+@login_required
+@admin_required
+def toggle_reminder_recipient(recipient_id):
+    require_csrf()
+    db = get_db()
+    db.execute("""
+        UPDATE helpdesk_staff_notifications
+        SET ativo=CASE WHEN ativo=1 THEN 0 ELSE 1 END, updated_at=?
+        WHERE id=?
+    """, (now_sql(), recipient_id))
+    db.commit()
+    db.close()
+    return redirect("/helpdesk/reminders")
+
+
 @bp.route("/helpdesk/settings")
 @login_required
 @admin_required

@@ -23,11 +23,13 @@ def safe_error(exc):
     return str(exc)[:500]
 
 
-def send_text(config, token, recipient, body):
+def send_text(config, token, recipient, body, save_on_ticket=None):
+    if save_on_ticket is None:
+        save_on_ticket = bool(config["save_on_ticket"])
     payload = json.dumps({
         "number": recipient,
         "body": body,
-        "saveOnTicket": bool(config["save_on_ticket"]),
+        "saveOnTicket": bool(save_on_ticket),
         "linkPreview": bool(config["link_preview"]),
     }, ensure_ascii=False).encode("utf-8")
     req = Request(
@@ -63,7 +65,10 @@ def process_notification_outbox():
         for row in rows:
             attempted_at = now_sql()
             try:
-                code = send_text(config, token, row["recipient"], row["body"])
+                code = send_text(
+                    config, token, row["recipient"], row["body"],
+                    save_on_ticket=False if row["event_type"].startswith("internal_") else None,
+                )
                 db.execute("""
                     UPDATE notification_outbox
                     SET status='sent', attempts=attempts+1, last_attempt_at=?, sent_at=?,

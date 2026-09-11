@@ -884,6 +884,7 @@ def init_db():
         channel TEXT NOT NULL DEFAULT 'ticketz_whatsapp',
         ticket_id INTEGER,
         contact_id INTEGER,
+        staff_recipient_id INTEGER,
         recipient TEXT NOT NULL,
         event_type TEXT NOT NULL,
         body TEXT NOT NULL,
@@ -895,6 +896,40 @@ def init_db():
         response_code INTEGER,
         error TEXT,
         idempotency_key TEXT NOT NULL UNIQUE,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    add_column_if_missing(cur, "notification_outbox", "staff_recipient_id", "INTEGER")
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS helpdesk_reminder_config (
+        id INTEGER PRIMARY KEY CHECK (id=1),
+        ativo INTEGER DEFAULT 0,
+        unassigned_initial_minutes INTEGER DEFAULT 30,
+        reminder_interval_minutes INTEGER DEFAULT 180,
+        daily_limit INTEGER DEFAULT 3,
+        business_start_hour INTEGER DEFAULT 8,
+        business_end_hour INTEGER DEFAULT 18,
+        weekdays_only INTEGER DEFAULT 1,
+        base_url TEXT DEFAULT 'https://bkp.fpinformatica.com.br',
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+        INSERT OR IGNORE INTO helpdesk_reminder_config (id, ativo, updated_at)
+        VALUES (1, 0, CURRENT_TIMESTAMP)
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS helpdesk_staff_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE,
+        telefone TEXT NOT NULL,
+        notify_unassigned INTEGER DEFAULT 1,
+        notify_own INTEGER DEFAULT 1,
+        notify_all_overdue INTEGER DEFAULT 0,
+        ativo INTEGER DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -1040,6 +1075,10 @@ def init_db():
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
         ON notification_outbox(status, available_at)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_helpdesk_staff_notifications_active
+        ON helpdesk_staff_notifications(ativo, user_id)
     """)
     if USING_POSTGRES:
         cur.execute("""

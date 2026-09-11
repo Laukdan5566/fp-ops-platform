@@ -1,6 +1,7 @@
 import hashlib
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -56,7 +57,7 @@ db.execute(
 db.commit()
 db.close()
 
-for path in ("/helpdesk", "/helpdesk/new", "/helpdesk/contacts", "/helpdesk/settings"):
+for path in ("/helpdesk", "/helpdesk/new", "/helpdesk/contacts", "/helpdesk/reminders", "/helpdesk/settings"):
     response = http.get(path)
     assert response.status_code == 200, (path, response.get_data(as_text=True))
 
@@ -110,6 +111,33 @@ db.execute(
 db.commit()
 db.close()
 
+recipient_saved = http.post(
+    "/helpdesk/reminders/recipients",
+    data={
+        "_csrf_token": "csrf-test",
+        "user_id": str(user_id),
+        "telefone": "5511888888888",
+        "notify_unassigned": "1",
+        "notify_own": "1",
+    },
+)
+assert recipient_saved.status_code == 302
+config_saved = http.post(
+    "/helpdesk/reminders/config",
+    data={
+        "_csrf_token": "csrf-test",
+        "ativo": "1",
+        "unassigned_initial_minutes": "30",
+        "reminder_interval_minutes": "180",
+        "daily_limit": "3",
+        "business_start_hour": "8",
+        "business_end_hour": "18",
+        "weekdays_only": "1",
+        "base_url": "https://ops.example.test",
+    },
+)
+assert config_saved.status_code == 302
+
 payload = {
     "source_ticket_id": "1845",
     "source_ticket_uuid": "example-uuid",
@@ -148,11 +176,36 @@ db.close()
 
 import worker.ticketz_notifications as notifications
 
-notifications.send_text = lambda config, token, recipient, body: 200
+notifications.send_text = lambda config, token, recipient, body, **kwargs: 200
 result = notifications.process_notification_outbox()
 assert result == {"sent": 1, "error": 0}
 db = get_db()
 assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='sent'").fetchone()["c"] == 1
+db.execute("UPDATE helpdesk_tickets SET created_at='2026-09-11 05:00:00', updated_at='2026-09-11 05:00:00'")
+db.commit()
 db.close()
+
+from worker.helpdesk_reminders import queue_internal_reminders
+
+reminders = queue_internal_reminders(datetime(2026, 9, 11, 10, 0, 0))
+assert reminders == {"queued": 1, "recipients": 1, "tickets": 2}
+duplicate_reminder = queue_internal_reminders(datetime(2026, 9, 11, 10, 1, 0))
+assert duplicate_reminder["queued"] == 0
+assert queue_internal_reminders(datetime(2026, 9, 11, 13, 1, 0))["queued"] == 1
+assert queue_internal_reminders(datetime(2026, 9, 11, 16, 2, 0))["queued"] == 1
+db = get_db()
+digest = db.execute("SELECT * FROM notification_outbox WHERE event_type='internal_reminder_digest'").fetchone()
+assert digest
+assert digest["recipient"] == "5511888888888"
+assert "2 chamado(s)" in digest["body"]
+assert "ops.example.test/helpdesk" in digest["body"]
+assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE event_type='internal_reminder_digest'").fetchone()["c"] == 3
+db.execute("UPDATE helpdesk_reminder_config SET business_end_hour=24")
+db.commit()
+db.close()
+assert queue_internal_reminders(datetime(2026, 9, 11, 19, 3, 0))["queued"] == 0
+assert queue_internal_reminders(datetime(2026, 9, 12, 10, 0, 0))["queued"] == 0
+result = notifications.process_notification_outbox()
+assert result == {"sent": 3, "error": 0}
 
 print("helpdesk-candidate-ok")

@@ -24,6 +24,7 @@ from pfsense_agent import run_due_firewalls, run_requested_firewall_speedtests
 from pfsense_links import run_due_link_tests, run_requested_link_tests
 from pfsense_storage import run_storage_cleanup
 from ticketz_notifications import process_notification_outbox
+from helpdesk_reminders import queue_internal_reminders
 
 
 IMAP_CHECK_INTERVAL = int(os.getenv("IMAP_CHECK_INTERVAL", "300"))
@@ -31,6 +32,7 @@ MAX_EMAILS_PER_RUN = int(os.getenv("MAX_EMAILS_PER_RUN", "1000"))
 IMAP_LOOKBACK_DAYS = int(os.getenv("IMAP_LOOKBACK_DAYS", "3"))
 IMAP_TIMEOUT = int(os.getenv("IMAP_TIMEOUT", "30"))
 RETENTION_CHECK_ENABLED = int(os.getenv("RETENTION_CHECK_ENABLED", "1"))
+HELPDESK_REMINDER_CHECK_INTERVAL = int(os.getenv("HELPDESK_REMINDER_CHECK_INTERVAL", "60"))
 
 
 def agora_str():
@@ -526,6 +528,7 @@ def processar_emails():
 
 if __name__ == "__main__":
     next_full_run = 0.0
+    next_helpdesk_reminder_run = 0.0
     while True:
         try:
             if time.monotonic() >= next_full_run:
@@ -537,6 +540,9 @@ if __name__ == "__main__":
                 next_full_run = time.monotonic() + IMAP_CHECK_INTERVAL
             run_requested_firewall_speedtests()
             run_requested_link_tests()
+            if time.monotonic() >= next_helpdesk_reminder_run:
+                queue_internal_reminders()
+                next_helpdesk_reminder_run = time.monotonic() + HELPDESK_REMINDER_CHECK_INTERVAL
             process_notification_outbox()
         except Exception as e:
             print("Erro:", e, flush=True)
