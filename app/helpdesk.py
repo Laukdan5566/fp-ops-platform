@@ -161,6 +161,58 @@ def queue_notification(db, ticket_id, event_type):
     return True
 
 
+def queue_internal_new_ticket(db, ticket_id):
+    ticketz = db.execute("SELECT ativo, token_enc FROM ticketz_config WHERE id=1").fetchone()
+    reminder = db.execute("SELECT ativo, base_url FROM helpdesk_reminder_config WHERE id=1").fetchone()
+    if not ticketz or not int(ticketz["ativo"] or 0) or not ticketz["token_enc"]:
+        return 0
+    if not reminder or not int(reminder["ativo"] or 0):
+        return 0
+    ticket = db.execute("""
+        SELECT t.*, c.nome_exibicao AS cliente_nome
+        FROM helpdesk_tickets t
+        LEFT JOIN clientes c ON c.id=t.cliente_id
+        WHERE t.id=?
+    """, (ticket_id,)).fetchone()
+    if not ticket:
+        return 0
+    recipients = db.execute("""
+        SELECT n.id, n.telefone
+        FROM helpdesk_staff_notifications n
+        JOIN usuarios u ON u.id=n.user_id
+        WHERE n.ativo=1 AND u.ativo=1
+        ORDER BY n.id
+    """).fetchall()
+    client = ticket["cliente_nome"] or ticket["requester_name"] or "Sem cliente"
+    body = (
+        "FP Ops - novo chamado\n"
+        f"{ticket['numero']} [{ticket['prioridade']}]\n"
+        f"Cliente: {client}\n"
+        f"Assunto: {ticket['assunto']}\n"
+        f"Aberto por: {ticket['opened_by_name'] or 'Sistema'}\n"
+        "Status: aguardando atendimento\n"
+        f"Abrir: {reminder['base_url'].rstrip('/')}/helpdesk/tickets/{ticket_id}"
+    )
+    queued = 0
+    now = now_sql()
+    for recipient in recipients:
+        idempotency_key = hashlib.sha256(
+            f"internal-new-ticket|{ticket_id}|{recipient['id']}".encode("utf-8")
+        ).hexdigest()
+        inserted = db.execute("""
+            INSERT OR IGNORE INTO notification_outbox (
+                ticket_id, staff_recipient_id, recipient, event_type, body,
+                status, available_at, idempotency_key, created_at, updated_at
+            ) VALUES (?, ?, ?, 'internal_ticket_opened', ?, 'pending', ?, ?, ?, ?)
+        """, (
+            ticket_id, recipient["id"], recipient["telefone"], body,
+            now, idempotency_key, now, now,
+        ))
+        if inserted.rowcount:
+            queued += 1
+    return queued
+
+
 def ticket_or_404(db, ticket_id):
     ticket = db.execute("""
         SELECT t.*, c.nome_exibicao AS cliente_nome, s.nome_log AS servidor_nome,
@@ -268,6 +320,7 @@ def create_ticket():
     set_ticket_number(db, ticket_id)
     add_audit(db, ticket_id, "created", "user", session["user_id"], session.get("username"), {"origin": "manual"})
     queue_notification(db, ticket_id, "ticket_opened")
+    queue_internal_new_ticket(db, ticket_id)
     db.commit()
     db.close()
     return redirect(f"/helpdesk/tickets/{ticket_id}")
@@ -679,6 +732,7 @@ def api_ticketz_create_ticket():
             "ticketz_company_id": company_id, "source_ticket_id": external_id,
         })
         queue_notification(db, ticket_id, "ticket_opened")
+        queue_internal_new_ticket(db, ticket_id)
         db.commit()
         base = request.url_root.rstrip("/")
         return jsonify({"created": True, "ticket_id": ticket_id, "number": number, "status": "open", "url": f"{base}/helpdesk/tickets/{ticket_id}"}), 201

@@ -1,10 +1,13 @@
 import hashlib
-from datetime import datetime
+import os
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from db import get_db
 
 
 MAX_TICKETS_IN_MESSAGE = 12
+BUSINESS_TIMEZONE = ZoneInfo(os.getenv("HELPDESK_TIMEZONE", "America/Sao_Paulo"))
 
 
 def parse_sql_datetime(value):
@@ -50,7 +53,14 @@ def build_digest(recipient, tickets, base_url, now):
 
 
 def queue_internal_reminders(current_time=None):
-    now = (current_time or datetime.now()).replace(tzinfo=None, second=0, microsecond=0)
+    if current_time is None:
+        local_now = datetime.now(BUSINESS_TIMEZONE)
+    elif current_time.tzinfo is None:
+        local_now = current_time.replace(tzinfo=BUSINESS_TIMEZONE)
+    else:
+        local_now = current_time.astimezone(BUSINESS_TIMEZONE)
+    local_now = local_now.replace(second=0, microsecond=0)
+    now_utc = local_now.astimezone(timezone.utc).replace(tzinfo=None)
     db = get_db()
     result = {"queued": 0, "recipients": 0, "tickets": 0}
     try:
@@ -60,9 +70,9 @@ def queue_internal_reminders(current_time=None):
             return result
         if not ticketz or not int(ticketz["ativo"] or 0) or not ticketz["token_enc"]:
             return result
-        if int(config["weekdays_only"] or 0) and now.weekday() >= 5:
+        if int(config["weekdays_only"] or 0) and local_now.weekday() >= 5:
             return result
-        if not int(config["business_start_hour"]) <= now.hour < int(config["business_end_hour"]):
+        if not int(config["business_start_hour"]) <= local_now.hour < int(config["business_end_hour"]):
             return result
 
         recipients = db.execute("""
@@ -93,12 +103,12 @@ def queue_internal_reminders(current_time=None):
                 created = parse_sql_datetime(ticket["created_at"])
                 updated = parse_sql_datetime(ticket["updated_at"])
                 if not ticket["assignee_user_id"] and ticket["status"] == "open":
-                    age = (now - created).total_seconds() / 60 if created else 0
+                    age = (now_utc - created).total_seconds() / 60 if created else 0
                     if age < initial or not int(recipient["notify_unassigned"] or 0):
                         continue
                     ticket["reminder_kind"] = "unassigned"
                 else:
-                    age = (now - updated).total_seconds() / 60 if updated else 0
+                    age = (now_utc - updated).total_seconds() / 60 if updated else 0
                     own = ticket["assignee_user_id"] == recipient["user_id"] and int(recipient["notify_own"] or 0)
                     manager = int(recipient["notify_all_overdue"] or 0)
                     if age < interval or not (own or manager):
@@ -118,21 +128,29 @@ def queue_internal_reminders(current_time=None):
             """, (recipient["id"],)).fetchone()
             if last:
                 last_at = parse_sql_datetime(last["created_at"])
-                if last_at and (now - last_at).total_seconds() < interval * 60:
+                if last_at and (now_utc - last_at).total_seconds() < interval * 60:
                     continue
+            day_start_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end_local = day_start_local + timedelta(days=1)
+            day_start_utc = day_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+            day_end_utc = day_end_local.astimezone(timezone.utc).replace(tzinfo=None)
             sent_today = db.execute("""
                 SELECT COUNT(*) AS total FROM notification_outbox
                 WHERE staff_recipient_id=? AND event_type='internal_reminder_digest'
-                  AND date(created_at)=date(?)
-            """, (recipient["id"], now.strftime("%Y-%m-%d %H:%M:%S"))).fetchone()
+                  AND datetime(created_at)>=datetime(?) AND datetime(created_at)<datetime(?)
+            """, (
+                recipient["id"], day_start_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                day_end_utc.strftime("%Y-%m-%d %H:%M:%S"),
+            )).fetchone()
             if int(sent_today["total"] or 0) >= daily_limit:
                 continue
 
-            slot = int(now.timestamp()) // (interval * 60)
+            slot = int(now_utc.replace(tzinfo=timezone.utc).timestamp()) // (interval * 60)
             idempotency_key = hashlib.sha256(
                 f"internal-digest|{recipient['id']}|{slot}".encode("utf-8")
             ).hexdigest()
-            body = build_digest(recipient, due, config["base_url"], now)
+            body = build_digest(recipient, due, config["base_url"], local_now)
+            now_sql = now_utc.strftime("%Y-%m-%d %H:%M:%S")
             inserted = db.execute("""
                 INSERT OR IGNORE INTO notification_outbox (
                     staff_recipient_id, recipient, event_type, body, status,
@@ -140,8 +158,7 @@ def queue_internal_reminders(current_time=None):
                 ) VALUES (?, ?, 'internal_reminder_digest', ?, 'pending', ?, ?, ?, ?)
             """, (
                 recipient["id"], recipient["telefone"], body,
-                now.strftime("%Y-%m-%d %H:%M:%S"), idempotency_key,
-                now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S"),
+                now_sql, idempotency_key, now_sql, now_sql,
             ))
             if inserted.rowcount:
                 result["queued"] += 1

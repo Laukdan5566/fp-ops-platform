@@ -1,7 +1,7 @@
 import hashlib
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -176,23 +176,25 @@ assert ticket["opened_by_external_id"] == "27"
 assert ticket["opened_by_name"] == "Joao Ticketz"
 assert ticket["requester_contact_id"] == contact_id
 assert db.execute("SELECT COUNT(*) AS c FROM external_ticket_links").fetchone()["c"] == 1
-assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='pending'").fetchone()["c"] == 1
+assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='pending'").fetchone()["c"] == 2
+internal_opened = db.execute("SELECT * FROM notification_outbox WHERE event_type='internal_ticket_opened'").fetchone()
+assert internal_opened and internal_opened["recipient"] == "5511888888888"
 db.close()
 
 import worker.ticketz_notifications as notifications
 
 notifications.send_text = lambda config, token, recipient, body, **kwargs: 200
 result = notifications.process_notification_outbox()
-assert result == {"sent": 1, "error": 0}
+assert result == {"sent": 2, "error": 0}
 db = get_db()
-assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='sent'").fetchone()["c"] == 1
+assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='sent'").fetchone()["c"] == 2
 db.execute("UPDATE helpdesk_tickets SET created_at='2026-09-11 05:00:00', updated_at='2026-09-11 05:00:00'")
 db.commit()
 db.close()
 
 from worker.helpdesk_reminders import queue_internal_reminders
 
-reminders = queue_internal_reminders(datetime(2026, 9, 11, 10, 0, 0))
+reminders = queue_internal_reminders(datetime(2026, 9, 11, 13, 0, 0, tzinfo=timezone.utc))
 assert reminders == {"queued": 1, "recipients": 1, "tickets": 2}
 duplicate_reminder = queue_internal_reminders(datetime(2026, 9, 11, 10, 1, 0))
 assert duplicate_reminder["queued"] == 0

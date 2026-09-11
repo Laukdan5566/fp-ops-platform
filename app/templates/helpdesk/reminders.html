@@ -5,7 +5,7 @@
     <a href="/helpdesk" class="btn btn-outline-secondary">Voltar</a>
 </div>
 {% if not ticketz_ready %}<div class="alert alert-warning">Configure e ative a saída WhatsApp na <a href="/helpdesk/settings">Integração Ticketz</a> antes de ativar os lembretes.</div>{% endif %}
-<div class="alert alert-info">O funcionário recebe um único resumo, mesmo que existam vários chamados. A contagem reinicia quando o chamado é movimentado; chamados aguardando cliente, resolvidos ou fechados não entram na cobrança.</div>
+<div class="alert alert-info">Chamados novos avisam imediatamente todos os funcionários cadastrados, inclusive fora do expediente. Depois, cada funcionário recebe um único resumo periódico, mesmo que existam várias pendências. Chamados aguardando cliente, resolvidos ou fechados não entram na cobrança.</div>
 <div class="row g-3">
     <div class="col-lg-7"><form method="post" action="/helpdesk/reminders/config" class="card card-body">
         <input type="hidden" name="_csrf_token" value="{{ helpdesk_csrf_token() }}"><h5>Régua de cobrança</h5>
@@ -18,7 +18,8 @@
             <div class="col-md-3"><label class="form-label">Fim</label><input class="form-control" type="number" min="1" max="24" name="business_end_hour" value="{{ config.business_end_hour }}" required></div>
             <div class="col-md-6"><label class="form-label">URL do FP Ops</label><input class="form-control" type="url" name="base_url" value="{{ config.base_url }}" required></div>
         </div>
-        <div class="form-check my-3"><input class="form-check-input" type="checkbox" name="weekdays_only" value="1" id="weekdays" {% if config.weekdays_only %}checked{% endif %}><label class="form-check-label" for="weekdays">Enviar somente de segunda a sexta</label></div>
+        <div class="form-check mt-3"><input class="form-check-input" type="checkbox" name="weekdays_only" value="1" id="weekdays" {% if config.weekdays_only %}checked{% endif %}><label class="form-check-label" for="weekdays">Enviar somente de segunda a sexta</label></div>
+        <div class="small text-muted mb-3">Horários interpretados no fuso de Brasília (America/Sao_Paulo).</div>
         <div><button class="btn btn-primary">Salvar régua</button></div>
     </form></div>
     <div class="col-lg-5"><form method="post" action="/helpdesk/reminders/recipients" class="card card-body">
