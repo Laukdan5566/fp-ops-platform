@@ -1,104 +1,82 @@
 {% extends "base.html" %}
 {% block content %}
-
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-    <h2 class="mb-0">Dashboard - Monitoramento Diario</h2>
-    <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-primary btn-sm" href="/backups">Ver backups</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/disponibilidade">Ver agents</a>
-    </div>
+<div class="page-header">
+    <div><h1>Central de operações</h1><div class="page-subtitle">Visão executiva da infraestrutura, proteção de dados e atendimento.</div></div>
+    <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="/dashboard">Atualizar agora</a><a class="btn btn-primary btn-sm" href="/helpdesk/new">Novo chamado</a></div>
 </div>
 
-<p class="text-muted">
-Referente ao dia: <strong>{{ data_ref }}</strong>
-</p>
+<section class="ops-hero mb-4" aria-label="Resumo operacional">
+    <div class="row align-items-center g-3 position-relative" style="z-index:1">
+        <div class="col-lg-8">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                {% if attention_total %}<span class="status-pill status-warning">Atenção necessária</span>{% else %}<span class="status-pill status-ok">Operação estável</span>{% endif %}
+                <span class="text-muted small">Atualizado {{ now|br_datetime('%d/%m às %H:%M') }}</span>
+            </div>
+            <div class="ops-hero-title">{% if attention_total %}{{ attention_total }} sinais precisam de análise{% else %}Nenhum incidente relevante agora{% endif %}</div>
+            <div class="ops-hero-copy">Prioriza falhas de backup, indisponibilidade, links, chamados sem responsável, desligamentos inesperados e notificações pendentes.</div>
+        </div>
+        <div class="col-lg-4"><div class="row g-2 text-center">
+            <div class="col"><div class="metric-detail">Clientes</div><div class="fs-3 fw-bold">{{ estate.clients or 0 }}</div></div>
+            <div class="col"><div class="metric-detail">Servidores</div><div class="fs-3 fw-bold">{{ estate.servers or 0 }}</div></div>
+            <div class="col"><div class="metric-detail">Firewalls</div><div class="fs-3 fw-bold">{{ pfsense.total or 0 }}</div></div>
+        </div></div>
+    </div>
+</section>
 
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="metric">
-            <small>OK</small>
-            <strong class="text-success fs-4">{{ resumo.ok if resumo else 0 }}</strong>
-        </div>
+<div class="section-heading"><h2>Visão por módulo</h2><small>Abra um módulo para investigar e agir</small></div>
+<section class="module-grid" aria-label="Módulos operacionais">
+    <a class="module-card" href="/backups">
+        <div class="module-top"><div class="d-flex align-items-center gap-2"><span class="module-icon">BK</span><span class="module-name">Backups</span></div>{% if backups.resumo.problemas %}<span class="status-pill status-danger">Incidente</span>{% else %}<span class="status-pill status-ok">Saudável</span>{% endif %}</div>
+        <div class="module-value">{{ backups.resumo.problemas or 0 }}</div><div class="module-caption">com erro ou atraso · {{ backups.resumo.ok or 0 }} de {{ backups.resumo.total or 0 }} em ordem</div>
+        <div class="module-footer"><span>Logs e agendas</span><span>Ver módulo →</span></div>
+    </a>
+    <a class="module-card" href="/disponibilidade">
+        <div class="module-top"><div class="d-flex align-items-center gap-2"><span class="module-icon">UP</span><span class="module-name">Disponibilidade</span></div>{% if availability.resumo.offline %}<span class="status-pill status-danger">Degradação</span>{% else %}<span class="status-pill status-ok">Online</span>{% endif %}</div>
+        <div class="module-value">{{ availability.resumo.online or 0 }}/{{ availability.resumo.total or 0 }}</div><div class="module-caption">agents online agora · média {{ '%.2f%%'|format(availability.resumo.media) if availability.resumo.media is not none else 'sem histórico' }}</div>
+        <div class="module-footer"><span>Agents e uptime</span><span>Ver módulo →</span></div>
+    </a>
+    <a class="module-card" href="/pfsense">
+        {% set fw_issues = (pfsense.offline or 0) + (pfsense.problemas_links or 0) + (pfsense.problemas_backup or 0) %}
+        <div class="module-top"><div class="d-flex align-items-center gap-2"><span class="module-icon">FW</span><span class="module-name">pfSense e Internet</span></div>{% if fw_issues %}<span class="status-pill status-warning">Verificar</span>{% else %}<span class="status-pill status-ok">Saudável</span>{% endif %}</div>
+        <div class="module-value">{{ pfsense.online or 0 }}/{{ pfsense.total or 0 }}</div><div class="module-caption">firewalls online · {{ pfsense.problemas_links or 0 }} link(s) com problema</div>
+        <div class="module-footer"><span>WAN, velocidade e backup</span><span>Ver módulo →</span></div>
+    </a>
+    <a class="module-card" href="/helpdesk">
+        <div class="module-top"><div class="d-flex align-items-center gap-2"><span class="module-icon">HD</span><span class="module-name">Helpdesk</span></div>{% if tickets.unassigned %}<span class="status-pill status-danger">Sem dono</span>{% elif tickets.active %}<span class="status-pill status-warning">Em curso</span>{% else %}<span class="status-pill status-ok">Em dia</span>{% endif %}</div>
+        <div class="module-value">{{ tickets.active or 0 }}</div><div class="module-caption">chamados ativos · {{ tickets.unassigned or 0 }} sem responsável</div>
+        <div class="module-footer"><span>Fila e atendimento</span><span>Ver módulo →</span></div>
+    </a>
+    <a class="module-card" href="/windows-events">
+        <div class="module-top"><div class="d-flex align-items-center gap-2"><span class="module-icon">EV</span><span class="module-name">Eventos Windows</span></div>{% if windows.unexpected %}<span class="status-pill status-warning">Detectado</span>{% else %}<span class="status-pill status-ok">Estável</span>{% endif %}</div>
+        <div class="module-value">{{ windows.unexpected or 0 }}</div><div class="module-caption">desligamentos inesperados em 30 dias · {{ windows.hosts or 0 }} hosts observados</div>
+        <div class="module-footer"><span>Auditoria e responsáveis</span><span>Ver módulo →</span></div>
+    </a>
+    <a class="module-card" href="/status">
+        <div class="module-top"><div class="d-flex align-items-center gap-2"><span class="module-icon">SYS</span><span class="module-name">Saúde da plataforma</span></div>{% if estate.notifications_pending or not backups.worker_fresh %}<span class="status-pill status-warning">Atenção</span>{% else %}<span class="status-pill status-ok">Operacional</span>{% endif %}</div>
+        <div class="module-value">{{ estate.notifications_pending or 0 }}</div><div class="module-caption">notificações pendentes · coletor {% if backups.worker_fresh %}atualizado{% else %}precisa de verificação{% endif %}</div>
+        <div class="module-footer"><span>Worker e integrações</span><span>Ver módulo →</span></div>
+    </a>
+</section>
+
+<div class="row g-3 mt-2">
+    <div class="col-xl-7">
+        <div class="section-heading"><h2>Fila de atenção</h2><small>Falhas e atrasos mais relevantes</small></div>
+        <div class="ops-panel p-3"><div class="attention-list">
+            {% for item in backup_attention %}<a class="attention-item" href="/servidor/{{ item.nome_log }}"><span class="attention-mark {{ 'danger' if item.status in ('erro','atrasado') else 'warning' }}"></span><div class="attention-copy"><div class="attention-title">{{ item.nome_log }} · {{ item.cliente }}</div><div class="attention-meta">Backup {{ item.status }} — {{ item.detalhe }}</div></div><span class="badge bg-dark">Backup</span></a>{% endfor %}
+            {% for item in agent_attention %}<a class="attention-item" href="/servidor/{{ item.nome_log }}"><span class="attention-mark danger"></span><div class="attention-copy"><div class="attention-title">{{ item.nome_log }} · {{ item.cliente }}</div><div class="attention-meta">Agent {{ item.streak.estado }}{% if item.streak.desde_min %} há {{ formatar_idade(item.streak.desde_min) }}{% endif %}</div></div><span class="badge bg-dark">Agent</span></a>{% endfor %}
+            {% for item in firewall_attention %}<a class="attention-item" href="/pfsense/{{ item.id }}"><span class="attention-mark {{ 'danger' if item.estado != 'online' else 'warning' }}"></span><div class="attention-copy"><div class="attention-title">{{ item.name }}</div><div class="attention-meta">{{ item.detalhe }}</div></div><span class="badge bg-dark">Firewall</span></a>{% endfor %}
+            {% if not backup_attention and not agent_attention and not firewall_attention %}<div class="text-center text-muted py-4">Infraestrutura sem itens críticos no momento.</div>{% endif %}
+        </div></div>
     </div>
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Com erro</small>
-            <strong class="text-danger fs-4">{{ resumo.erro if resumo else 0 }}</strong>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Nao recebido</small>
-            <strong class="text-warning fs-4">{{ resumo.nao_recebido if resumo else 0 }}</strong>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Nao programado</small>
-            <strong class="text-secondary fs-4">{{ resumo.nao_programado if resumo else 0 }}</strong>
-        </div>
+    <div class="col-xl-5">
+        <div class="section-heading"><h2>Chamados ativos</h2><a class="small text-decoration-none" href="/helpdesk">Abrir fila →</a></div>
+        <div class="ops-panel p-3"><div class="attention-list">
+            {% for ticket in latest_tickets %}<a class="attention-item" href="/helpdesk/tickets/{{ ticket.id }}"><span class="attention-mark {{ 'danger' if ticket.prioridade in ('critical','high') else 'info' }}"></span><div class="attention-copy"><div class="attention-title">{{ ticket.numero }} · {{ ticket.assunto }}</div><div class="attention-meta">{{ ticket.cliente_nome or 'Sem cliente' }} · {{ ticket.assignee_name or 'Sem responsável' }}</div></div><span class="badge bg-dark">{{ ticket.status }}</span></a>{% else %}<div class="text-center text-muted py-4">Nenhum chamado ativo.</div>{% endfor %}
+        </div></div>
+        <div class="section-heading"><h2>Eventos recentes</h2><a class="small text-decoration-none" href="/windows-events">Ver auditoria →</a></div>
+        <div class="ops-panel p-3"><div class="attention-list">
+            {% for event in windows_recent %}<a class="attention-item" href="/windows-events?event_id={{ event.event_id }}"><span class="attention-mark {{ 'danger' if event.event_id in (41,6008) else 'warning' }}"></span><div class="attention-copy"><div class="attention-title">{{ event.hostname }} · evento {{ event.event_id }}</div><div class="attention-meta">{{ event.cliente_nome }} · {{ event.occurred_at|br_datetime }}</div></div></a>{% else %}<div class="text-center text-muted py-4">Nenhum evento recente.</div>{% endfor %}
+        </div></div>
     </div>
 </div>
-
-{% if ultimo_worker %}
-<div class="alert {% if ultimo_worker.status == 'success' %}alert-success{% elif ultimo_worker.status == 'running' %}alert-info{% else %}alert-warning{% endif %}">
-    Worker: <strong>{{ ultimo_worker.status }}</strong>
-    iniciado em {{ ultimo_worker.started_at }}
-    {% if ultimo_worker.finished_at %}e finalizado em {{ ultimo_worker.finished_at }}{% endif %}.
-    {% if ultimo_worker.detalhe %}<br>{{ ultimo_worker.detalhe }}{% endif %}
-</div>
-{% endif %}
-
-{% if data %}
-<table class="table table-bordered table-hover align-middle">
-    <thead class="table-light">
-        <tr>
-            <th style="width: 25%;">Cliente</th>
-            <th style="width: 25%;">Servidor</th>
-            <th style="width: 20%;">Status</th>
-            <th>Detalhe</th>
-        </tr>
-    </thead>
-    <tbody>
-
-    {% for row in data %}
-    <tr>
-        <td>{{ row.nome_exibicao }}</td>
-
-        <td>
-            <a href="/servidor/{{ row.nome_log }}">
-                {{ row.nome_log }}
-            </a>
-        </td>
-
-        <td>
-            {% if row.status == "erro" %}
-                <span class="badge bg-danger">Erro</span>
-
-            {% elif row.status == "nao_recebido" %}
-                <span class="badge bg-warning text-dark">Nao Recebido</span>
-
-            {% elif row.status == "nao_programado" %}
-                <span class="badge bg-secondary">Nao Programado</span>
-
-            {% else %}
-                <span class="badge bg-dark">Sem Registro</span>
-            {% endif %}
-        </td>
-
-        <td>
-            {{ row.detalhe if row.detalhe else "-" }}
-        </td>
-    </tr>
-    {% endfor %}
-
-    </tbody>
-</table>
-
-{% else %}
-<div class="alert alert-success mt-3">
-    Nenhum problema encontrado.
-</div>
-{% endif %}
-
 {% endblock %}

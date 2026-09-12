@@ -1,29 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+<div class="page-header">
     <div>
-        <h2 class="mb-1">Backups</h2>
-        <div class="text-muted">Status dos logs recebidos, atrasos e falhas. Atualizado em {{ agora }}</div>
+        <h1>Backups</h1>
+        <div class="page-subtitle">Status dos logs recebidos, atrasos, agendas e falhas operacionais.</div>
     </div>
-    <a class="btn btn-outline-secondary btn-sm" href="/backups">Atualizar</a>
+    <div class="page-actions"><span class="text-muted small">Atualizado {{ agora|br_datetime }}</span><a class="btn btn-outline-secondary btn-sm" href="/backups">Atualizar</a></div>
 </div>
 
 <div class="row g-3 mb-4">
     <div class="col-md-2 col-6">
-        <div class="metric">
+        <div class="metric accent-blue">
             <small>Total</small>
             <strong class="fs-4">{{ resumo.total }}</strong>
         </div>
     </div>
     <div class="col-md-2 col-6">
-        <div class="metric">
+        <div class="metric accent-green">
             <small>OK</small>
             <strong class="text-success fs-4">{{ resumo.ok }}</strong>
         </div>
     </div>
     <div class="col-md-2 col-6">
-        <div class="metric">
+        <div class="metric {{ 'accent-red' if resumo.problemas else 'accent-green' }}">
             <small>Problemas</small>
             <strong class="text-danger fs-4">{{ resumo.problemas }}</strong>
         </div>

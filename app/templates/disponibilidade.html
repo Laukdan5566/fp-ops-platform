@@ -3,12 +3,12 @@
 
 {% set periodo_label = "24h" if horas == 24 else ("7 dias" if horas == 168 else "30 dias") %}
 
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+<div class="page-header">
     <div>
-        <h2 class="mb-1">Disponibilidade</h2>
-        <div class="text-muted">Saúde dos agents e firewalls pfSense. Atualizado em {{ agora }}</div>
+        <h1>Disponibilidade</h1>
+        <div class="page-subtitle">Saúde dos agents, firewalls e histórico de presença operacional.</div>
     </div>
-    <div class="d-flex flex-wrap gap-2">
+    <div class="page-actions">
         <a class="btn btn-outline-primary btn-sm" target="_blank" href="/disponibilidade/relatorio?cliente_id={{ cliente_id }}&horas={{ horas }}">Visualizar relatorio</a>
         <a class="btn btn-primary btn-sm" href="/disponibilidade/relatorio?cliente_id={{ cliente_id }}&horas={{ horas }}&download=1">Baixar relatorio</a>
         <a class="btn btn-outline-secondary btn-sm" href="/disponibilidade">Atualizar</a>
@@ -63,19 +63,19 @@
 
 <div class="row g-3 mb-4">
     <div class="col-md-2 col-6">
-        <div class="metric">
+        <div class="metric accent-blue">
             <small>Total agents</small>
             <strong class="fs-4">{{ resumo.total }}</strong>
         </div>
     </div>
     <div class="col-md-2 col-6">
-        <div class="metric">
+        <div class="metric accent-green">
             <small>Online agora</small>
             <strong class="text-success fs-4">{{ resumo.online }}</strong>
         </div>
     </div>
     <div class="col-md-2 col-6">
-        <div class="metric">
+        <div class="metric {{ 'accent-red' if resumo.offline else 'accent-green' }}">
             <small>Offline agora</small>
             <strong class="text-danger fs-4">{{ resumo.offline }}</strong>
         </div>

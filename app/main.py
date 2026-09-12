@@ -28,12 +28,26 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
 )
 LATEST_AGENT_VERSION = "1.3.1"
+BRASILIA_TZ = ZoneInfo("America/Sao_Paulo")
 AGENT_UPDATE_URL = "https://bkp.fpinformatica.com.br/static/backup-monitor-agent.zip"
 AGENT_UPDATE_URL_WS2012 = "https://bkp.fpinformatica.com.br/static/backup-monitor-agent-legacy-ws2012.zip"
 AGENT_SETUP_URL = "https://bkp.fpinformatica.com.br/static/BackupMonitorAgentSetup.exe"
 AGENT_SETUP_URL_WS2012 = "https://bkp.fpinformatica.com.br/static/BackupMonitorAgentSetupLegacy2012.exe"
 AUTO_RECOVER_AGENTS = int(os.getenv("AUTO_RECOVER_AGENTS", "0"))
 _AGENT_PACKAGE_HASH_CACHE = {}
+
+
+@app.template_filter("br_datetime")
+def br_datetime(value, fmt="%d/%m/%Y %H:%M"):
+    if not value:
+        return "-"
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(BRASILIA_TZ).strftime(fmt)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def agent_package_sha256(filename):
@@ -986,8 +1000,76 @@ def favicon():
 @login_required
 def clientes():
     db = get_db()
-    clientes = db.execute("SELECT * FROM clientes").fetchall()
-    return render_template("clientes.html", clientes=clientes)
+    clientes = db.execute("""
+        WITH server_counts AS (
+            SELECT cliente_id, COUNT(*) AS total FROM servidores WHERE ativo=1 GROUP BY cliente_id
+        ), agent_counts AS (
+            SELECT s.cliente_id, COUNT(*) AS total
+            FROM servidores s JOIN agent_heartbeats h ON UPPER(h.servidor_log)=UPPER(s.nome_log)
+            WHERE s.ativo=1 AND datetime(h.last_seen)>=datetime('now','-10 minutes')
+            GROUP BY s.cliente_id
+        ), ticket_counts AS (
+            SELECT cliente_id, COUNT(*) AS total FROM helpdesk_tickets
+            WHERE status NOT IN ('resolved','closed') GROUP BY cliente_id
+        ), event_counts AS (
+            SELECT cliente_id, COUNT(*) AS total FROM windows_events
+            WHERE datetime(occurred_at)>=datetime('now','-30 days') GROUP BY cliente_id
+        )
+        SELECT c.*, COALESCE(sc.total,0) AS server_count, COALESCE(ac.total,0) AS agent_online,
+               COALESCE(tc.total,0) AS ticket_count, COALESCE(ec.total,0) AS event_count
+        FROM clientes c
+        LEFT JOIN server_counts sc ON sc.cliente_id=c.id
+        LEFT JOIN agent_counts ac ON ac.cliente_id=c.id
+        LEFT JOIN ticket_counts tc ON tc.cliente_id=c.id
+        LEFT JOIN event_counts ec ON ec.cliente_id=c.id
+        ORDER BY c.ativo DESC, c.nome_exibicao
+    """).fetchall()
+    summary = {
+        "active": sum(1 for row in clientes if row["ativo"]),
+        "servers": sum(int(row["server_count"] or 0) for row in clientes if row["ativo"]),
+        "online": sum(int(row["agent_online"] or 0) for row in clientes if row["ativo"]),
+        "tickets": sum(int(row["ticket_count"] or 0) for row in clientes if row["ativo"]),
+    }
+    db.close()
+    return render_template("clientes.html", clientes=clientes, summary=summary, title="Clientes")
+
+
+@app.route("/search")
+@login_required
+def global_search():
+    query = (request.args.get("q") or "").strip()[:80]
+    results = {"clientes": [], "servidores": [], "firewalls": [], "chamados": []}
+    if query:
+        term = f"%{query}%"
+        db = get_db()
+        try:
+            results["clientes"] = db.execute("""
+                SELECT id, nome_exibicao, ativo FROM clientes
+                WHERE UPPER(nome_exibicao) LIKE UPPER(?)
+                ORDER BY ativo DESC, nome_exibicao LIMIT 10
+            """, (term,)).fetchall()
+            results["servidores"] = db.execute("""
+                SELECT s.id, s.nome_log, s.ativo, c.nome_exibicao AS cliente_nome
+                FROM servidores s JOIN clientes c ON c.id=s.cliente_id
+                WHERE UPPER(s.nome_log) LIKE UPPER(?) OR UPPER(c.nome_exibicao) LIKE UPPER(?)
+                ORDER BY s.ativo DESC, c.nome_exibicao, s.nome_log LIMIT 10
+            """, (term, term)).fetchall()
+            results["firewalls"] = db.execute("""
+                SELECT id, name, address, last_status FROM pfsense_firewalls
+                WHERE UPPER(name) LIKE UPPER(?) OR UPPER(address) LIKE UPPER(?)
+                ORDER BY active DESC, name LIMIT 10
+            """, (term, term)).fetchall()
+            results["chamados"] = db.execute("""
+                SELECT t.id, t.numero, t.assunto, t.status, c.nome_exibicao AS cliente_nome
+                FROM helpdesk_tickets t LEFT JOIN clientes c ON c.id=t.cliente_id
+                WHERE UPPER(t.numero) LIKE UPPER(?) OR UPPER(t.assunto) LIKE UPPER(?)
+                   OR UPPER(COALESCE(c.nome_exibicao,'')) LIKE UPPER(?)
+                ORDER BY datetime(t.updated_at) DESC LIMIT 10
+            """, (term, term, term)).fetchall()
+        finally:
+            db.close()
+    total = sum(len(items) for items in results.values())
+    return render_template("search.html", query=query, results=results, total=total, title="Busca global")
 
 
 @app.route("/clientes/add", methods=["POST"])
@@ -1169,109 +1251,75 @@ def update_servidor(id):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-
     db = get_db()
-
-    agora = datetime.now()
-    ontem_date = agora - timedelta(days=1)
-    ontem = ontem_date.strftime("%Y-%m-%d")
-    dia_semana = ontem_date.weekday()
-
-    # janela de tolerância maior para evitar falso negativo
-    limite_busca = (agora - timedelta(hours=36)).strftime("%Y-%m-%d %H:%M:%S")
-
-    servidores = db.execute("""
-        SELECT s.id, s.nome_log, c.nome_exibicao
-        FROM servidores s
-        JOIN clientes c ON c.id = s.cliente_id
-        WHERE s.ativo = 1 AND c.ativo = 1
-    """).fetchall()
-
-    data = []
-    resumo = {
-        "ok": 0,
-        "erro": 0,
-        "nao_recebido": 0,
-        "nao_programado": 0,
-    }
-
-    for s in servidores:
-
-        agendamentos = db.execute("""
-            SELECT * FROM agendamentos_backup
-            WHERE servidor_id=? AND ativo=1
-        """, (s["id"],)).fetchall()
-
-        if not agendamentos:
-            resumo["nao_programado"] += 1
-            data.append({
-                "nome_exibicao": s["nome_exibicao"],
-                "nome_log": s["nome_log"],
-                "status": "nao_programado",
-                "detalhe": "Sem agendamentos configurados"
-            })
-            continue
-
-        houve_falha = False
-        nao_recebido = False
-
-        for ag in agendamentos:
-
-            dias_lista = (ag["dias_execucao"] or "").split(",")
-
-            if str(dia_semana) not in dias_lista:
-                continue
-
-            log = db.execute("""
-                SELECT status, data_email
-                FROM logs_email
-                WHERE UPPER(servidor_log)=?
-                AND datetime(data_email) >= ?
-                ORDER BY datetime(data_email) DESC
-                LIMIT 1
-            """, (s["nome_log"].upper(), limite_busca)).fetchone()
-
-            if not log:
-                nao_recebido = True
-                continue
-
-            if log["status"] == "error":
-                houve_falha = True
-
-        if houve_falha:
-            resumo["erro"] += 1
-            data.append({
-                "nome_exibicao": s["nome_exibicao"],
-                "nome_log": s["nome_log"],
-                "status": "erro",
-                "detalhe": "Um ou mais backups com erro"
-            })
-
-        elif nao_recebido:
-            resumo["nao_recebido"] += 1
-            data.append({
-                "nome_exibicao": s["nome_exibicao"],
-                "nome_log": s["nome_log"],
-                "status": "nao_recebido",
-                "detalhe": "Backup não recebido em um dos horários"
-            })
-        else:
-            resumo["ok"] += 1
-
-    ultimo_worker = db.execute("""
-        SELECT *
-        FROM worker_runs
-        ORDER BY datetime(started_at) DESC, id DESC
-        LIMIT 1
-    """).fetchone()
-
-    return render_template(
-        "dashboard.html",
-        data=data,
-        data_ref=ontem,
-        resumo=resumo,
-        ultimo_worker=ultimo_worker
-    )
+    try:
+        agora = datetime.now()
+        backups_data = montar_dados_backups(db)
+        availability = montar_dados_tempo_online(db, "", 24)
+        pfsense_rows, pfsense_summary = montar_disponibilidade_pfsense(db, availability["agora"], 24)
+        ticket_summary = db.execute("""
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN status NOT IN ('resolved','closed') THEN 1 ELSE 0 END) AS active,
+                   SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS open,
+                   SUM(CASE WHEN status='open' AND assignee_user_id IS NULL THEN 1 ELSE 0 END) AS unassigned,
+                   SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress,
+                   SUM(CASE WHEN status='waiting_customer' THEN 1 ELSE 0 END) AS waiting,
+                   SUM(CASE WHEN prioridade='critical' AND status NOT IN ('resolved','closed') THEN 1 ELSE 0 END) AS critical
+            FROM helpdesk_tickets
+        """).fetchone()
+        windows_summary = db.execute("""
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN event_id IN (41,6008) THEN 1 ELSE 0 END) AS unexpected,
+                   SUM(CASE WHEN event_id IN (41,6008) AND datetime(occurred_at)>=datetime('now','-24 hours') THEN 1 ELSE 0 END) AS unexpected_24h,
+                   COUNT(DISTINCT hostname) AS hosts
+            FROM windows_events
+            WHERE datetime(occurred_at)>=datetime('now','-30 days')
+        """).fetchone()
+        estate = db.execute("""
+            SELECT (SELECT COUNT(*) FROM clientes WHERE ativo=1) AS clients,
+                   (SELECT COUNT(*) FROM servidores WHERE ativo=1) AS servers,
+                   (SELECT COUNT(*) FROM notification_outbox WHERE status IN ('pending','retry')) AS notifications_pending,
+                   (SELECT COUNT(*) FROM logs_nao_cadastrados) AS unknown_logs
+        """).fetchone()
+        latest_tickets = db.execute("""
+            SELECT t.id, t.numero, t.assunto, t.prioridade, t.status, t.created_at,
+                   c.nome_exibicao AS cliente_nome, u.username AS assignee_name
+            FROM helpdesk_tickets t
+            LEFT JOIN clientes c ON c.id=t.cliente_id
+            LEFT JOIN usuarios u ON u.id=t.assignee_user_id
+            WHERE t.status NOT IN ('resolved','closed')
+            ORDER BY CASE t.prioridade WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END,
+                     datetime(t.created_at) DESC LIMIT 6
+        """).fetchall()
+        windows_recent = db.execute("""
+            SELECT we.id, we.hostname, we.event_id, we.occurred_at, we.initiated_by,
+                   c.nome_exibicao AS cliente_nome
+            FROM windows_events we JOIN clientes c ON c.id=we.cliente_id
+            WHERE we.event_id IN (41,6008,1074)
+            ORDER BY datetime(we.occurred_at) DESC, we.id DESC LIMIT 5
+        """).fetchall()
+        backup_attention = [row for row in backups_data["linhas"] if row["status"] in ("erro", "atrasado", "alerta", "sem_log")][:7]
+        agent_attention = [row for row in availability["linhas"] if row["streak"]["estado"] != "online"][:7]
+        firewall_attention = [row for row in pfsense_rows if row["estado"] != "online" or row["backup_problem"] or row["ftp_problem"] or row["link_problem"] or row["speedtest_problem"]][:6]
+        attention_total = (
+            int(backups_data["resumo"]["problemas"] or 0)
+            + int(availability["resumo"]["offline"] or 0)
+            + len(firewall_attention)
+            + int(ticket_summary["unassigned"] or 0)
+            + int(windows_summary["unexpected_24h"] or 0)
+            + int(estate["notifications_pending"] or 0)
+        )
+        return render_template(
+            "dashboard.html", backups=backups_data, availability=availability,
+            pfsense_rows=pfsense_rows, pfsense=pfsense_summary, tickets=ticket_summary,
+            windows=windows_summary, estate=estate, latest_tickets=latest_tickets,
+            windows_recent=windows_recent, backup_attention=backup_attention,
+            agent_attention=agent_attention, firewall_attention=firewall_attention,
+            attention_total=attention_total, now=agora, formatar_idade=formatar_idade,
+            title="Central de operações",
+        )
+    finally:
+        db.close()
 
 
 # =========================
@@ -2029,7 +2077,16 @@ def status_sistema():
             LEFT JOIN servidores s ON UPPER(l.servidor_log)=UPPER(s.nome_log)
             WHERE s.id IS NULL
         """).fetchone()["c"],
+        "notificacoes_pendentes": db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status IN ('pending','retry')").fetchone()["c"],
+        "notificacoes_falhas": db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='failed'").fetchone()["c"],
     }
+    ticketz = db.execute("SELECT ativo, CASE WHEN token_enc IS NULL OR token_enc='' THEN 0 ELSE 1 END AS token_ok FROM ticketz_config WHERE id=1").fetchone()
+    storage = db.execute("SELECT active, last_status, last_test_at, last_cleanup_at FROM pfsense_storage WHERE id=1").fetchone()
+    agent_versions = db.execute("SELECT COALESCE(agent_version,'desconhecida') AS version, COUNT(*) AS total FROM agent_heartbeats GROUP BY COALESCE(agent_version,'desconhecida') ORDER BY total DESC").fetchall()
+    worker_ref = parse_data(ultimo_worker["finished_at"] or ultimo_worker["started_at"]) if ultimo_worker else None
+    worker_age = max(0, int((datetime.now() - worker_ref).total_seconds() // 60)) if worker_ref else None
+    worker_fresh = worker_age is not None and worker_age <= 15 and ultimo_worker["status"] in ("success", "running")
+    db.close()
 
     return render_template(
         "status.html",
@@ -2037,7 +2094,9 @@ def status_sistema():
         historico_worker=historico_worker,
         email_config=email_config,
         totais=totais,
-        title="Status do Sistema",
+        ticketz=ticketz, storage=storage, agent_versions=agent_versions,
+        worker_age=worker_age, worker_fresh=worker_fresh,
+        title="Saúde da plataforma",
     )
 
 
@@ -2904,12 +2963,14 @@ def windows_events():
         FROM windows_events
         WHERE datetime(occurred_at) >= datetime('now', '-30 days')
     """).fetchone()
+    db.close()
     return render_template(
         "windows_events.html",
         eventos=eventos,
         clientes=clientes,
         resumo=resumo,
         filtros={"cliente_id": cliente_id, "event_id": event_id, "q": busca},
+        title="Eventos Windows",
     )
 
 
@@ -3508,18 +3569,36 @@ def montar_relatorio_links(db, firewall_id, days):
 @login_required
 def pfsense_list():
     db = get_db()
-    firewalls = []
-    for row in db.execute("SELECT * FROM pfsense_firewalls ORDER BY name").fetchall():
-        item = dict(row)
-        item["latest_check"] = db.execute(
-            "SELECT * FROM pfsense_checks WHERE firewall_id=? ORDER BY id DESC LIMIT 1",
-            (item["id"],),
-        ).fetchone()
-        item["backup_count"] = db.execute(
-            "SELECT COUNT(*) AS total FROM pfsense_backups WHERE firewall_id=? AND status='success'",
-            (item["id"],),
-        ).fetchone()["total"]
-        firewalls.append(item)
+    rows = db.execute("""
+        WITH latest_checks AS (
+            SELECT pc.*, ROW_NUMBER() OVER (PARTITION BY firewall_id ORDER BY id DESC) AS rn
+            FROM pfsense_checks pc
+        ), backup_counts AS (
+            SELECT firewall_id, COUNT(*) AS total
+            FROM pfsense_backups WHERE status='success' GROUP BY firewall_id
+        )
+        SELECT f.*, lc.latency_ms, lc.version, lc.hostname, lc.disk_percent,
+               lc.interfaces_total, lc.interfaces_up, COALESCE(bc.total,0) AS backup_count
+        FROM pfsense_firewalls f
+        LEFT JOIN latest_checks lc ON lc.firewall_id=f.id AND lc.rn=1
+        LEFT JOIN backup_counts bc ON bc.firewall_id=f.id
+        ORDER BY f.active DESC, f.name
+    """).fetchall()
+    firewalls = [dict(row) for row in rows]
+    summary = {
+        "total": sum(1 for item in firewalls if item["active"]),
+        "online": sum(1 for item in firewalls if item["active"] and item["last_status"] == "online"),
+        "error": sum(1 for item in firewalls if item["active"] and item["last_status"] == "error"),
+        "waiting": sum(1 for item in firewalls if item["active"] and not item["last_status"]),
+        "backups": sum(int(item["backup_count"] or 0) for item in firewalls),
+    }
+    links_summary = db.execute("""
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN last_probe_status='online' THEN 1 ELSE 0 END) AS online,
+               SUM(CASE WHEN last_probe_status IN ('offline','error') THEN 1 ELSE 0 END) AS error,
+               SUM(CASE WHEN contracted_down_mbps IS NULL OR contracted_up_mbps IS NULL THEN 1 ELSE 0 END) AS incomplete
+        FROM pfsense_links WHERE active=1
+    """).fetchone()
     storage_row = db.execute("SELECT * FROM pfsense_storage WHERE id=1").fetchone()
     storage = dict(storage_row) if storage_row else None
     if storage:
@@ -3527,8 +3606,8 @@ def pfsense_list():
         storage.pop("password_enc", None)
     db.close()
     return render_template(
-        "pfsense_list.html", firewalls=firewalls, storage=storage,
-        message=request.args.get("message"),
+        "pfsense_list.html", firewalls=firewalls, storage=storage, summary=summary,
+        links_summary=links_summary, message=request.args.get("message"), title="pfSense e Internet",
     )
 
 

@@ -352,6 +352,7 @@
             .menu-btn { display: none; }
         }
     </style>
+    <link href="{{ url_for('static', filename='fp-ops.css') }}" rel="stylesheet">
 </head>
 
 <body>
@@ -359,56 +360,71 @@
 <div class="sidebar" id="sidebar">
     <div class="sidebar-logo">
         <div class="logo-box">FP</div>
-        <div class="logo-text">Ops</div>
+        <div class="logo-copy"><div class="logo-text">FP Ops</div><div class="logo-caption">Operations center</div></div>
     </div>
 
-    <a href="/dashboard">Dashboard</a>
-    <a href="/helpdesk">Helpdesk</a>
-    <a href="/disponibilidade">Disponibilidade</a>
-    <a href="/backups">Backups</a>
-    <a href="/pfsense">pfSense Agent</a>
-    <a href="/">Clientes</a>
+    <nav class="sidebar-nav" aria-label="Navegação principal">
+    <div class="nav-kicker">Operação</div>
+    <a class="{% if request.path == '/dashboard' %}active{% endif %}" href="/dashboard"><span class="nav-symbol">OC</span><span>Central de operações</span></a>
+    <a class="{% if request.path.startswith('/helpdesk') and not request.path.startswith('/helpdesk/contacts') and not request.path.startswith('/helpdesk/reminders') and not request.path.startswith('/helpdesk/settings') %}active{% endif %}" href="/helpdesk"><span class="nav-symbol">HD</span><span>Helpdesk</span></a>
+    <a class="{% if request.path.startswith('/disponibilidade') or request.path.startswith('/tempo-online') %}active{% endif %}" href="/disponibilidade"><span class="nav-symbol">UP</span><span>Disponibilidade</span></a>
+    <a class="{% if request.path.startswith('/backups') or request.path.startswith('/servidor/') %}active{% endif %}" href="/backups"><span class="nav-symbol">BK</span><span>Backups</span></a>
+    <a class="{% if request.path.startswith('/pfsense') and not request.path.startswith('/pfsense/storage') %}active{% endif %}" href="/pfsense"><span class="nav-symbol">FW</span><span>pfSense e Internet</span></a>
+    <a class="{% if request.path == '/' or request.path.startswith('/clientes') or request.path.startswith('/servidores/') %}active{% endif %}" href="/"><span class="nav-symbol">CL</span><span>Clientes</span></a>
 
     {% set reports_open = request.path.startswith('/windows-events') or request.path.startswith('/logs-nao-cadastrados') or request.path.startswith('/historico') or request.path.startswith('/status') %}
+    <div class="nav-kicker">Análise</div>
     <details {% if reports_open %}open{% endif %}>
-        <summary>Relatórios e logs</summary>
-        <a class="submenu-link" href="/windows-events">Eventos Windows</a>
-        <a class="submenu-link" href="/logs-nao-cadastrados">Logs não cadastrados</a>
-        <a class="submenu-link" href="/historico">Histórico geral</a>
-        <a class="submenu-link" href="/status">Status do sistema</a>
+        <summary><span class="nav-symbol">AN</span><span>Relatórios e logs</span></summary>
+        <a class="submenu-link {% if request.path.startswith('/windows-events') %}active{% endif %}" href="/windows-events">Eventos Windows</a>
+        <a class="submenu-link {% if request.path.startswith('/logs-nao-cadastrados') %}active{% endif %}" href="/logs-nao-cadastrados">Logs não cadastrados</a>
+        <a class="submenu-link {% if request.path.startswith('/historico') %}active{% endif %}" href="/historico">Histórico geral</a>
+        <a class="submenu-link {% if request.path.startswith('/status') %}active{% endif %}" href="/status">Saúde da plataforma</a>
     </details>
 
     {% if session.tipo == "admin" %}
     {% set settings_open = request.path.startswith('/helpdesk/contacts') or request.path.startswith('/helpdesk/reminders') or request.path.startswith('/helpdesk/settings') or request.path.startswith('/pfsense/storage') or request.path.startswith('/email-config') or request.path.startswith('/zammad-config') or request.path.startswith('/api-keys') or request.path.startswith('/admin') %}
+    <div class="nav-kicker">Administração</div>
     <details {% if settings_open %}open{% endif %}>
-        <summary>Configurações do sistema</summary>
-        <a class="submenu-link" href="/helpdesk/contacts">Contatos do helpdesk</a>
-        <a class="submenu-link" href="/helpdesk/reminders">Lembretes internos</a>
-        <a class="submenu-link" href="/helpdesk/settings">Integração Ticketz</a>
-        <a class="submenu-link" href="/pfsense/storage">Storage pfSense / FTP</a>
-        <a class="submenu-link" href="/email-config">E-mail</a>
-        <a class="submenu-link" href="/zammad-config">Zammad (legado)</a>
-        <a class="submenu-link" href="/api-keys">Agents e chaves</a>
-        <a class="submenu-link" href="/admin">Administração</a>
+        <summary><span class="nav-symbol">CF</span><span>Configurações</span></summary>
+        <a class="submenu-link {% if request.path.startswith('/helpdesk/contacts') %}active{% endif %}" href="/helpdesk/contacts">Contatos do helpdesk</a>
+        <a class="submenu-link {% if request.path.startswith('/helpdesk/reminders') %}active{% endif %}" href="/helpdesk/reminders">Lembretes internos</a>
+        <a class="submenu-link {% if request.path.startswith('/helpdesk/settings') %}active{% endif %}" href="/helpdesk/settings">Integração Ticketz</a>
+        <a class="submenu-link {% if request.path.startswith('/pfsense/storage') %}active{% endif %}" href="/pfsense/storage">Storage pfSense / FTP</a>
+        <a class="submenu-link {% if request.path.startswith('/email-config') %}active{% endif %}" href="/email-config">E-mail</a>
+        <a class="submenu-link {% if request.path.startswith('/zammad-config') %}active{% endif %}" href="/zammad-config">Zammad (legado)</a>
+        <a class="submenu-link {% if request.path.startswith('/api-keys') %}active{% endif %}" href="/api-keys">Agents e chaves</a>
+        <a class="submenu-link {% if request.path.startswith('/admin') %}active{% endif %}" href="/admin">Usuários e retenção</a>
     </details>
     {% endif %}
+    </nav>
+
+    <div class="sidebar-user">
+        <div class="user-avatar">{{ (session.username or 'FP')[:2] }}</div>
+        <div class="user-meta"><div class="user-name">{{ session.username or 'Usuário' }}</div><div class="user-role">{{ session.tipo or 'operador' }}</div></div>
+        <a class="logout-link" href="/logout" title="Sair">Sair</a>
+    </div>
 </div>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMenu()"></div>
 
 <div class="content">
 
-    <button class="menu-btn" onclick="toggleMenu()">Menu</button>
+    <header class="topbar">
+        <button class="menu-btn" type="button" onclick="toggleMenu()" aria-label="Abrir menu" aria-controls="sidebar">☰</button>
+        <div class="topbar-context"><div class="topbar-eyebrow">FP Informática</div><div class="topbar-title">{{ title or "Operações" }}</div></div>
+        <form class="global-search" method="get" action="/search" role="search"><span class="search-mark">⌕</span><input class="form-control" name="q" value="{{ request.args.get('q', '') if request.path == '/search' else '' }}" placeholder="Buscar cliente, servidor, firewall ou chamado" aria-label="Busca global"></form>
+        <div class="topbar-live"><span class="live-dot"></span><span>Plataforma online</span></div>
+    </header>
 
-    <div class="title-bar mb-4">
-        <strong>{{ title or "FP Ops" }}</strong>
-    </div>
-
-    {% block content %}{% endblock %}
+    <main class="page-shell">{% block content %}{% endblock %}</main>
 
 </div>
 
 <script>
 function toggleMenu() {
     document.getElementById("sidebar").classList.toggle("active");
+    document.getElementById("sidebarOverlay").classList.toggle("active");
 }
 </script>
 

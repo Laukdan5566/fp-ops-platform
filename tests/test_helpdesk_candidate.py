@@ -57,13 +57,23 @@ db.execute(
 db.commit()
 db.close()
 
-for path in ("/helpdesk", "/helpdesk/new", "/helpdesk/contacts", "/helpdesk/reminders", "/helpdesk/settings"):
+for path in (
+    "/dashboard", "/search?q=Cliente", "/", "/backups", "/disponibilidade",
+    "/pfsense", "/windows-events", "/status", "/helpdesk", "/helpdesk/new",
+    "/helpdesk/contacts", "/helpdesk/reminders", "/helpdesk/settings",
+):
     response = http.get(path)
     assert response.status_code == 200, (path, response.get_data(as_text=True))
 
+dashboard_body = http.get("/dashboard").get_data(as_text=True)
+assert "Central de operações" in dashboard_body
+assert "Visão por módulo" in dashboard_body
+assert app.jinja_env.filters["br_datetime"]("2026-09-12 03:00:00") == "12/09/2026 00:00"
+
 menu_body = http.get("/helpdesk").get_data(as_text=True)
 assert "Relatórios e logs" in menu_body
-assert "Configurações do sistema" in menu_body
+assert "Administração" in menu_body
+assert "Configurações" in menu_body
 assert "Zammad (legado)" in menu_body
 
 generated = http.post(

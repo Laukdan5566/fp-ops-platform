@@ -1,20 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="page-header">
     <div>
-        <h2 class="mb-1">Helpdesk</h2>
-        <div class="text-muted">Chamados manuais, do monitoramento e do Ticketz.</div>
+        <h1>Helpdesk</h1>
+        <div class="page-subtitle">Fila operacional, responsabilidades e chamados que precisam de ação.</div>
     </div>
-    <a class="btn btn-primary" href="/helpdesk/new">Novo chamado</a>
+    <div class="page-actions">{% if session.tipo == 'admin' %}<a class="btn btn-outline-secondary" href="/helpdesk/reminders">Lembretes</a>{% endif %}<a class="btn btn-primary" href="/helpdesk/new">Novo chamado</a></div>
 </div>
 
 <div class="row g-3 mb-3">
-    <div class="col-md"><div class="metric"><small>Ativos</small><div class="fs-3 fw-bold">{{ counts.active or 0 }}</div></div></div>
-    <div class="col-md"><div class="metric"><small>Novos</small><div class="fs-3 fw-bold text-danger">{{ counts.open or 0 }}</div></div></div>
-    <div class="col-md"><div class="metric"><small>Em atendimento</small><div class="fs-3 fw-bold text-primary">{{ counts.in_progress or 0 }}</div></div></div>
-    <div class="col-md"><div class="metric"><small>Aguardando cliente</small><div class="fs-3 fw-bold text-warning">{{ counts.waiting_customer or 0 }}</div></div></div>
-    <div class="col-md"><div class="metric"><small>Resolvidos</small><div class="fs-3 fw-bold text-success">{{ counts.resolved or 0 }}</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric accent-blue"><small>Ativos</small><strong>{{ counts.active or 0 }}</strong><div class="metric-detail">fila total</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric {{ 'accent-red' if counts.unassigned else 'accent-green' }}"><small>Sem responsável</small><strong class="{{ 'text-danger' if counts.unassigned else 'text-success' }}">{{ counts.unassigned or 0 }}</strong><div class="metric-detail">precisam ser aceitos</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric accent-orange"><small>Em atendimento</small><strong>{{ counts.in_progress or 0 }}</strong><div class="metric-detail">em execução</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric {{ 'accent-red' if counts.stale else 'accent-green' }}"><small>Parados há 3h</small><strong>{{ counts.stale or 0 }}</strong><div class="metric-detail">sem movimentação</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric accent-blue"><small>Aguardando cliente</small><strong>{{ counts.waiting_customer or 0 }}</strong><div class="metric-detail">fora da cobrança</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric {{ 'accent-red' if counts.critical else 'accent-green' }}"><small>Críticos</small><strong>{{ counts.critical or 0 }}</strong><div class="metric-detail">prioridade máxima</div></div></div>
 </div>
+
+{% if workload %}<div class="ops-panel p-3 mb-3"><div class="d-flex flex-wrap align-items-center gap-2"><span class="text-muted small me-1">Carga atual</span>{% for item in workload %}<span class="badge bg-dark">{{ item.responsavel }} · {{ item.total }}{% if item.priority %} · {{ item.priority }} prioritário(s){% endif %}</span>{% endfor %}</div></div>{% endif %}
 
 <form class="card card-body mb-3" method="get">
     <div class="row g-2">
@@ -49,9 +52,9 @@
                 <td>{{ ticket.cliente_nome or ticket.requester_name or 'Não vinculado' }}</td>
                 <td>{{ ticket.assunto }}</td>
                 <td><span class="badge {% if ticket.prioridade == 'critical' %}bg-danger{% elif ticket.prioridade == 'high' %}bg-warning text-dark{% elif ticket.prioridade == 'low' %}bg-secondary{% else %}bg-primary{% endif %}">{{ ticket.prioridade }}</span></td>
-                <td>{{ ticket.status }}</td>
+                <td>{% set status_labels = {'open':'Novo','in_progress':'Em atendimento','waiting_customer':'Aguardando cliente','resolved':'Resolvido','closed':'Fechado'} %}<span class="status-pill {% if ticket.status in ('resolved','closed') %}status-ok{% elif ticket.status == 'waiting_customer' %}status-warning{% else %}status-neutral{% endif %}">{{ status_labels.get(ticket.status, ticket.status) }}</span></td>
                 <td>{{ ticket.assignee_name or 'Não atribuído' }}</td>
-                <td>{{ ticket.updated_at }}</td>
+                <td>{{ ticket.updated_at|br_datetime }}</td>
             </tr>
             {% else %}
             <tr><td colspan="7" class="text-center text-muted py-5">Nenhum chamado encontrado.</td></tr>

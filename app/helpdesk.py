@@ -265,13 +265,23 @@ def index():
         SELECT
           SUM(CASE WHEN status NOT IN ('resolved','closed') THEN 1 ELSE 0 END) AS active,
           SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS open,
+          SUM(CASE WHEN status='open' AND assignee_user_id IS NULL THEN 1 ELSE 0 END) AS unassigned,
           SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress,
           SUM(CASE WHEN status='waiting_customer' THEN 1 ELSE 0 END) AS waiting_customer,
-          SUM(CASE WHEN status='resolved' THEN 1 ELSE 0 END) AS resolved
+          SUM(CASE WHEN status='resolved' THEN 1 ELSE 0 END) AS resolved,
+          SUM(CASE WHEN prioridade='critical' AND status NOT IN ('resolved','closed') THEN 1 ELSE 0 END) AS critical,
+          SUM(CASE WHEN status IN ('open','in_progress') AND datetime(updated_at)<=datetime('now','-3 hours') THEN 1 ELSE 0 END) AS stale
         FROM helpdesk_tickets
     """).fetchone()
+    workload = db.execute("""
+        SELECT COALESCE(u.username, 'Sem responsável') AS responsavel, COUNT(*) AS total,
+               SUM(CASE WHEN t.prioridade IN ('critical','high') THEN 1 ELSE 0 END) AS priority
+        FROM helpdesk_tickets t LEFT JOIN usuarios u ON u.id=t.assignee_user_id
+        WHERE t.status NOT IN ('resolved','closed')
+        GROUP BY u.id, u.username ORDER BY total DESC, responsavel
+    """).fetchall()
     db.close()
-    return render_template("helpdesk/index.html", tickets=tickets, counts=counts, selected_status=status, selected_priority=priority, search=search)
+    return render_template("helpdesk/index.html", tickets=tickets, counts=counts, workload=workload, selected_status=status, selected_priority=priority, search=search, title="Helpdesk")
 
 
 @bp.route("/helpdesk/new")

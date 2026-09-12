@@ -1,116 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-
-<h2>Status do Sistema</h2>
+<div class="page-header"><div><h1>Saúde da plataforma</h1><div class="page-subtitle">Coletores, integrações, filas e capacidade operacional do FP Ops.</div></div><div class="page-actions"><a class="btn btn-outline-secondary" href="/status">Atualizar</a></div></div>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Clientes ativos</small>
-            <strong class="fs-4">{{ totais.clientes }}</strong>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Servidores ativos</small>
-            <strong class="fs-4">{{ totais.servidores }}</strong>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Logs processados</small>
-            <strong class="fs-4">{{ totais.logs }}</strong>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric">
-            <small>Nao cadastrados</small>
-            <strong class="fs-4">{{ totais.nao_cadastrados }}</strong>
-        </div>
-    </div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric accent-orange"><small>Clientes</small><strong>{{ totais.clientes }}</strong><div class="metric-detail">ativos</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric accent-blue"><small>Servidores</small><strong>{{ totais.servidores }}</strong><div class="metric-detail">monitorados</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric accent-blue"><small>Logs</small><strong>{{ totais.logs }}</strong><div class="metric-detail">processados</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric {{ 'accent-red' if totais.nao_cadastrados else 'accent-green' }}"><small>Não cadastrados</small><strong>{{ totais.nao_cadastrados }}</strong><div class="metric-detail">exigem vínculo</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric {{ 'accent-red' if totais.notificacoes_pendentes else 'accent-green' }}"><small>Fila WhatsApp</small><strong>{{ totais.notificacoes_pendentes }}</strong><div class="metric-detail">pendentes/retry</div></div></div>
+    <div class="col-xl-2 col-md-4 col-6"><div class="metric {{ 'accent-red' if totais.notificacoes_falhas else 'accent-green' }}"><small>Falhas de envio</small><strong>{{ totais.notificacoes_falhas }}</strong><div class="metric-detail">esgotaram tentativas</div></div></div>
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">Ultima execucao do worker</div>
-            <div class="card-body">
-                {% if ultimo_worker %}
-                    <p><strong>Status:</strong> {{ ultimo_worker.status }}</p>
-                    <p><strong>Inicio:</strong> {{ ultimo_worker.started_at }}</p>
-                    <p><strong>Fim:</strong> {{ ultimo_worker.finished_at or "-" }}</p>
-                    <p><strong>Encontrados:</strong> {{ ultimo_worker.emails_encontrados }}</p>
-                    <p><strong>Novos:</strong> {{ ultimo_worker.novos }}</p>
-                    <p><strong>Duplicados:</strong> {{ ultimo_worker.duplicados }}</p>
-                    <p><strong>Ignorados:</strong> {{ ultimo_worker.ignorados }}</p>
-                    <p><strong>Erros:</strong> {{ ultimo_worker.erros }}</p>
-                    <p class="mb-0"><strong>Detalhe:</strong> {{ ultimo_worker.detalhe or "-" }}</p>
-                {% else %}
-                    <p class="mb-0 text-muted">Nenhuma execucao registrada.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">Configuracao IMAP</div>
-            <div class="card-body">
-                {% if email_config %}
-                    <p><strong>Servidor:</strong> {{ email_config.imap_server }}</p>
-                    <p><strong>Porta:</strong> {{ email_config.imap_port }}</p>
-                    <p><strong>Usuario:</strong> {{ email_config.email_user }}</p>
-                    <p><strong>Pasta:</strong> {{ email_config.pasta }}</p>
-                    <p class="mb-0"><strong>SSL:</strong> {{ "sim" if email_config.usar_ssl else "nao" }}</p>
-                {% else %}
-                    <p class="mb-0 text-muted">Configuracao de e-mail nao cadastrada.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
+    <div class="col-lg-4"><div class="ops-panel p-3 h-100"><div class="module-top"><h2 class="h6 mb-0">Coletor principal</h2><span class="status-pill {{ 'status-ok' if worker_fresh else 'status-danger' }}">{{ 'Operacional' if worker_fresh else 'Verificar' }}</span></div>{% if ultimo_worker %}<div class="mt-3"><div class="fs-5 fw-bold">{{ ultimo_worker.status }}</div><div class="text-muted small">Última execução {{ (ultimo_worker.finished_at or ultimo_worker.started_at)|br_datetime }}</div><div class="text-muted small mt-2">{{ ultimo_worker.detalhe or 'Sem detalhe adicional.' }}</div></div>{% else %}<div class="text-muted mt-3">Nenhuma execução registrada.</div>{% endif %}</div></div>
+    <div class="col-lg-4"><div class="ops-panel p-3 h-100"><div class="module-top"><h2 class="h6 mb-0">Integração Ticketz</h2><span class="status-pill {{ 'status-ok' if ticketz and ticketz.ativo and ticketz.token_ok else 'status-warning' }}">{{ 'Ativa' if ticketz and ticketz.ativo and ticketz.token_ok else 'Incompleta' }}</span></div><div class="mt-3 text-muted small">Canal de entrada de chamados e saída de notificações WhatsApp.</div><a class="btn btn-outline-primary btn-sm mt-3" href="/helpdesk/settings">Abrir configuração</a></div></div>
+    <div class="col-lg-4"><div class="ops-panel p-3 h-100"><div class="module-top"><h2 class="h6 mb-0">Storage pfSense</h2><span class="status-pill {{ 'status-ok' if storage and storage.active and storage.last_status == 'success' else 'status-warning' }}">{{ storage.last_status if storage and storage.last_status else 'Não validado' }}</span></div><div class="mt-3 text-muted small">Último teste {{ storage.last_test_at|br_datetime if storage else '-' }} · última limpeza {{ storage.last_cleanup_at|br_datetime if storage else '-' }}</div><a class="btn btn-outline-primary btn-sm mt-3" href="/pfsense/storage">Abrir configuração</a></div></div>
 </div>
 
-<h3>Historico recente do worker</h3>
-
-{% if historico_worker %}
-<table class="table table-bordered table-hover align-middle">
-    <thead class="table-light">
-        <tr>
-            <th>Inicio</th>
-            <th>Fim</th>
-            <th>Status</th>
-            <th>Encontrados</th>
-            <th>Novos</th>
-            <th>Duplicados</th>
-            <th>Ignorados</th>
-            <th>Erros</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for run in historico_worker %}
-        <tr>
-            <td>{{ run.started_at }}</td>
-            <td>{{ run.finished_at or "-" }}</td>
-            <td>
-                {% if run.status == "success" %}
-                    <span class="badge bg-success">success</span>
-                {% elif run.status == "running" %}
-                    <span class="badge bg-info text-dark">running</span>
-                {% else %}
-                    <span class="badge bg-danger">{{ run.status }}</span>
-                {% endif %}
-            </td>
-            <td>{{ run.emails_encontrados }}</td>
-            <td>{{ run.novos }}</td>
-            <td>{{ run.duplicados }}</td>
-            <td>{{ run.ignorados }}</td>
-            <td>{{ run.erros }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<div class="alert alert-info">Sem historico do worker ainda.</div>
-{% endif %}
-
+<div class="row g-3">
+    <div class="col-xl-8"><div class="section-heading"><h2>Execuções recentes do worker</h2><small>Últimas 20 rotinas</small></div><div class="ops-panel overflow-hidden"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Início</th><th>Fim</th><th>Status</th><th>Encontrados</th><th>Novos</th><th>Duplicados</th><th>Erros</th></tr></thead><tbody>{% for run in historico_worker %}<tr><td>{{ run.started_at|br_datetime }}</td><td>{{ run.finished_at|br_datetime }}</td><td><span class="status-pill {{ 'status-ok' if run.status == 'success' else ('status-warning' if run.status == 'running' else 'status-danger') }}">{{ run.status }}</span></td><td>{{ run.emails_encontrados }}</td><td>{{ run.novos }}</td><td>{{ run.duplicados }}</td><td>{{ run.erros }}</td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted py-4">Sem histórico.</td></tr>{% endfor %}</tbody></table></div></div></div>
+    <div class="col-xl-4"><div class="section-heading"><h2>Versões dos agents</h2><small>Parque instalado</small></div><div class="ops-panel p-3">{% for item in agent_versions %}<div class="d-flex justify-content-between border-bottom py-2" style="border-color:var(--ops-border-soft)!important"><span>v{{ item.version }}</span><strong>{{ item.total }}</strong></div>{% else %}<div class="text-muted">Nenhum agent identificado.</div>{% endfor %}</div>{% if email_config %}<div class="section-heading"><h2>Entrada de e-mail</h2></div><div class="ops-panel p-3"><div class="small text-muted">{{ email_config.imap_server }}:{{ email_config.imap_port }}</div><div class="fw-bold mt-1">{{ email_config.pasta }} · SSL {{ 'ativo' if email_config.usar_ssl else 'desativado' }}</div></div>{% endif %}</div>
+</div>
 {% endblock %}

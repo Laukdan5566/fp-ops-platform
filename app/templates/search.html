@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><div><h1>Busca global</h1><div class="page-subtitle">Clientes, servidores, firewalls e chamados em um só lugar.</div></div></div>
+{% if query %}
+<div class="d-flex align-items-center gap-2 mb-3"><span class="status-pill {{ 'status-ok' if total else 'status-neutral' }}">{{ total }} resultado(s)</span><span class="text-muted">para “{{ query }}”</span></div>
+<div class="search-results">
+    <section class="search-result-group"><div class="section-heading mt-0"><h2>Clientes</h2><span class="badge bg-dark">{{ results.clientes|length }}</span></div>{% for item in results.clientes %}<a class="search-result-link" href="/servidores/{{ item.id }}"><strong>{{ item.nome_exibicao }}</strong><div class="small text-muted">{{ 'Ativo' if item.ativo else 'Inativo' }} · abrir ativos do cliente</div></a>{% else %}<div class="text-muted py-3">Nenhum cliente encontrado.</div>{% endfor %}</section>
+    <section class="search-result-group"><div class="section-heading mt-0"><h2>Servidores</h2><span class="badge bg-dark">{{ results.servidores|length }}</span></div>{% for item in results.servidores %}<a class="search-result-link" href="/servidor/{{ item.nome_log }}"><strong>{{ item.nome_log }}</strong><div class="small text-muted">{{ item.cliente_nome }} · {{ 'Ativo' if item.ativo else 'Inativo' }}</div></a>{% else %}<div class="text-muted py-3">Nenhum servidor encontrado.</div>{% endfor %}</section>
+    <section class="search-result-group"><div class="section-heading mt-0"><h2>Firewalls</h2><span class="badge bg-dark">{{ results.firewalls|length }}</span></div>{% for item in results.firewalls %}<a class="search-result-link" href="/pfsense/{{ item.id }}"><strong>{{ item.name }}</strong><div class="small text-muted">{{ item.address }} · {{ item.last_status or 'Aguardando' }}</div></a>{% else %}<div class="text-muted py-3">Nenhum firewall encontrado.</div>{% endfor %}</section>
+    <section class="search-result-group"><div class="section-heading mt-0"><h2>Chamados</h2><span class="badge bg-dark">{{ results.chamados|length }}</span></div>{% for item in results.chamados %}<a class="search-result-link" href="/helpdesk/tickets/{{ item.id }}"><strong>{{ item.numero }} · {{ item.assunto }}</strong><div class="small text-muted">{{ item.cliente_nome or 'Sem cliente' }} · {{ item.status }}</div></a>{% else %}<div class="text-muted py-3">Nenhum chamado encontrado.</div>{% endfor %}</section>
+</div>
+{% else %}
+<div class="ops-panel p-5 text-center"><div class="fs-4 fw-bold mb-2">Encontre qualquer ativo rapidamente</div><div class="text-muted">Use a busca no topo para localizar um cliente, servidor, firewall ou chamado.</div></div>
+{% endif %}
+{% endblock %}

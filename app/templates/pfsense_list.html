@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="page-header">
     <div>
-        <h2 class="mb-1">pfSense Agent</h2>
-        <div class="text-muted">Monitoramento e backup criptografado de firewalls.</div>
+        <h1>pfSense e Internet</h1>
+        <div class="page-subtitle">Firewalls, links WAN, desempenho contratado e backups criptografados.</div>
     </div>
     {% if session.tipo == "admin" %}
-    <div class="d-flex gap-2">
+    <div class="page-actions">
         <a class="btn btn-outline-primary" href="/pfsense/storage">Armazenamento FTP</a>
         <a class="btn btn-primary" href="/pfsense/new">Cadastrar firewall</a>
     </div>
@@ -15,6 +15,14 @@
 </div>
 
 {% if message %}<div class="alert alert-info">{{ message }}</div>{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-xl col-6"><div class="metric accent-blue"><small>Firewalls ativos</small><strong>{{ summary.total }}</strong><div class="metric-detail">{{ summary.online }} online agora</div></div></div>
+    <div class="col-xl col-6"><div class="metric {{ 'accent-red' if summary.error else 'accent-green' }}"><small>Com falha</small><strong class="{{ 'text-danger' if summary.error else 'text-success' }}">{{ summary.error }}</strong><div class="metric-detail">{{ summary.waiting }} aguardando dados</div></div></div>
+    <div class="col-xl col-6"><div class="metric accent-blue"><small>Links monitorados</small><strong>{{ links_summary.total or 0 }}</strong><div class="metric-detail">{{ links_summary.online or 0 }} respondendo</div></div></div>
+    <div class="col-xl col-6"><div class="metric {{ 'accent-red' if links_summary.error else 'accent-green' }}"><small>Links com falha</small><strong>{{ links_summary.error or 0 }}</strong><div class="metric-detail">{{ links_summary.incomplete or 0 }} sem contrato completo</div></div></div>
+    <div class="col-xl col-12"><div class="metric accent-orange"><small>Backups preservados</small><strong>{{ summary.backups }}</strong><div class="metric-detail">configurações criptografadas</div></div></div>
+</div>
 
 {% if storage %}
 <div class="alert {{ 'alert-success' if storage.active and storage.last_status == 'success' else 'alert-secondary' }} d-flex justify-content-between align-items-center">
@@ -46,17 +54,17 @@
                     {% endif %}
                 </div>
                 <hr>
-                <div><strong>Ultima verificacao:</strong> {{ firewall.last_check_at or "-" }}</div>
-                <div><strong>Ultimo backup:</strong> {{ firewall.last_backup_at or "-" }}</div>
+                <div><strong>Última verificação:</strong> {{ firewall.last_check_at|br_datetime }}</div>
+                <div><strong>Último backup:</strong> {{ firewall.last_backup_at|br_datetime }}</div>
                 <div><strong>Backups:</strong> {{ firewall.backup_count }}</div>
-                {% if firewall.latest_check %}
-                <div><strong>Latencia:</strong> {{ firewall.latest_check.latency_ms or 0 }} ms</div>
+                {% if firewall.latency_ms is not none %}
+                <div><strong>Latência:</strong> {{ firewall.latency_ms }} ms</div>
                 {% endif %}
                 {% if firewall.last_error %}
                 <div class="alert alert-danger py-2 mt-3 mb-0 small">{{ firewall.last_error }}</div>
                 {% endif %}
             </div>
-            <div class="card-footer bg-white d-flex gap-2">
+            <div class="card-footer d-flex gap-2">
                 <a class="btn btn-sm btn-outline-primary" href="/pfsense/{{ firewall.id }}">Detalhes</a>
                 {% if session.tipo == "admin" %}
                 <a class="btn btn-sm btn-outline-secondary" href="/pfsense/{{ firewall.id }}/edit">Editar</a>
