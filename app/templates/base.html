@@ -361,6 +361,9 @@
     <div class="sidebar-logo">
         <div class="logo-box">FP</div>
         <div class="logo-copy"><div class="logo-text">FP Ops</div><div class="logo-caption">Operations center</div></div>
+        <button class="sidebar-pin-button" id="sidebarPinButton" type="button" onclick="toggleSidebarPin()" aria-label="Fixar menu aberto" aria-pressed="false" title="Fixar menu aberto">
+            <span></span><span></span><span></span>
+        </button>
     </div>
 
     <nav class="sidebar-nav" aria-label="Navegação principal">
@@ -422,10 +425,40 @@
 </div>
 
 <script>
+const sidebarStorageKey = "fpOpsSidebarPinned";
+
+function isMobileNavigation() {
+    return window.matchMedia("(max-width: 768px)").matches;
+}
+
+function updateSidebarPinButton() {
+    const button = document.getElementById("sidebarPinButton");
+    if (!button) return;
+    const pinned = document.body.classList.contains("sidebar-pinned");
+    button.setAttribute("aria-pressed", pinned ? "true" : "false");
+    button.setAttribute("aria-label", pinned ? "Recolher menu" : "Fixar menu aberto");
+    button.title = pinned ? "Recolher menu" : "Fixar menu aberto";
+}
+
+function toggleSidebarPin() {
+    if (isMobileNavigation()) {
+        toggleMenu();
+        return;
+    }
+    const pinned = document.body.classList.toggle("sidebar-pinned");
+    localStorage.setItem(sidebarStorageKey, pinned ? "true" : "false");
+    updateSidebarPinButton();
+}
+
 function toggleMenu() {
     document.getElementById("sidebar").classList.toggle("active");
     document.getElementById("sidebarOverlay").classList.toggle("active");
 }
+
+if (localStorage.getItem(sidebarStorageKey) === "true" && !isMobileNavigation()) {
+    document.body.classList.add("sidebar-pinned");
+}
+updateSidebarPinButton();
 </script>
 
 </body>

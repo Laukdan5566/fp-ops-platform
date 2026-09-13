@@ -75,6 +75,8 @@ assert "Relatórios e logs" in menu_body
 assert "Administração" in menu_body
 assert "Configurações" in menu_body
 assert "Zammad (legado)" in menu_body
+assert 'id="sidebarPinButton"' in menu_body
+assert "fpOpsSidebarPinned" in menu_body
 
 generated = http.post(
     "/helpdesk/settings/integration-token",
