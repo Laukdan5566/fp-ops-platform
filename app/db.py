@@ -338,6 +338,7 @@ def init_db():
     )
     """)
     add_column_if_missing(cur, "usuarios", "max_sessoes", "INTEGER DEFAULT 1")
+    add_column_if_missing(cur, "usuarios", "is_technician", "INTEGER DEFAULT 0")
 
     admin_user = os.getenv("ADMIN_USER")
     admin_pass = os.getenv("ADMIN_PASS")
@@ -932,6 +933,26 @@ def init_db():
         ativo INTEGER DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    add_column_if_missing(cur, "helpdesk_staff_notifications", "notify_servers", "INTEGER DEFAULT 0")
+    add_column_if_missing(cur, "helpdesk_staff_notifications", "notify_backups", "INTEGER DEFAULT 0")
+    add_column_if_missing(cur, "helpdesk_staff_notifications", "notify_pfsense", "INTEGER DEFAULT 0")
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS infrastructure_notification_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_type TEXT NOT NULL,
+        resource_id INTEGER NOT NULL,
+        current_state TEXT NOT NULL,
+        pending_state TEXT,
+        pending_count INTEGER DEFAULT 0,
+        incident_opened_at TEXT,
+        last_change_at TEXT NOT NULL,
+        last_detail TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(resource_type, resource_id)
     )
     """)
 

@@ -125,6 +125,7 @@ db.execute(
     """,
     (encrypt_secret("outbound-test-token"),),
 )
+db.execute("UPDATE usuarios SET is_technician=1 WHERE id=?", (user_id,))
 db.commit()
 db.close()
 
@@ -136,6 +137,9 @@ recipient_saved = http.post(
         "telefone": "5511888888888",
         "notify_unassigned": "1",
         "notify_own": "1",
+        "notify_servers": "1",
+        "notify_backups": "1",
+        "notify_pfsense": "1",
     },
 )
 assert recipient_saved.status_code == 302
@@ -191,6 +195,10 @@ assert db.execute("SELECT COUNT(*) AS c FROM external_ticket_links").fetchone()[
 assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='pending'").fetchone()["c"] == 2
 internal_opened = db.execute("SELECT * FROM notification_outbox WHERE event_type='internal_ticket_opened'").fetchone()
 assert internal_opened and internal_opened["recipient"] == "5511888888888"
+assert "*FP Ops | Novo chamado*" in internal_opened["body"]
+customer_opened = db.execute("SELECT * FROM notification_outbox WHERE event_type='ticket_opened'").fetchone()
+assert customer_opened and "*FP Ops | Chamado recebido*" in customer_opened["body"]
+assert "Prioridade: Alta" in customer_opened["body"]
 db.close()
 
 import worker.ticketz_notifications as notifications
@@ -226,5 +234,79 @@ assert queue_internal_reminders(datetime(2026, 9, 11, 19, 3, 0))["queued"] == 0
 assert queue_internal_reminders(datetime(2026, 9, 12, 10, 0, 0))["queued"] == 0
 result = notifications.process_notification_outbox()
 assert result == {"sent": 3, "error": 0}
+
+from worker.infrastructure_notifications import process_infrastructure_notifications
+
+fixed = datetime(2026, 9, 12, 12, 0, 0)
+db = get_db()
+server_id = db.execute(
+    "INSERT INTO servidores (cliente_id, nome_log, backups_semana, ativo) VALUES (?, 'SRV-ALERTA', 7, 1)",
+    (client_id,),
+).lastrowid
+db.execute("""
+    INSERT INTO agent_heartbeats (servidor_log, hostname, status, last_seen)
+    VALUES ('SRV-ALERTA', 'srv-alerta', 'online', '2026-09-12 12:00:00')
+""")
+db.execute("""
+    INSERT INTO logs_email (servidor_log, status, data_email, conteudo_raw, message_id)
+    VALUES ('SRV-ALERTA', 'success', '2026-09-12 12:00:00', 'Backup concluido', 'infra-success-1')
+""")
+firewall_id = db.execute("""
+    INSERT INTO pfsense_firewalls (
+        name, address, username_enc, host_key_fingerprint, active, last_status
+    ) VALUES ('Firewall Teste', '192.0.2.10', 'encrypted-test', 'test-fingerprint', 1, 'online')
+""").lastrowid
+db.commit()
+db.close()
+
+baseline = process_infrastructure_notifications(fixed)
+assert baseline["queued"] == 0
+db = get_db()
+db.execute("UPDATE agent_heartbeats SET last_seen='2026-09-12 11:30:00' WHERE servidor_log='SRV-ALERTA'")
+db.execute("""
+    INSERT INTO logs_email (servidor_log, status, data_email, conteudo_raw, message_id)
+    VALUES ('SRV-ALERTA', 'error', '2026-09-12 12:01:00', 'Falha no destino', 'infra-error-1')
+""")
+db.execute("UPDATE pfsense_firewalls SET last_status='error', last_error='Connection timed out' WHERE id=?", (firewall_id,))
+db.commit()
+db.close()
+first_confirmation = process_infrastructure_notifications(datetime(2026, 9, 12, 12, 1, 0))
+assert first_confirmation["queued"] == 1
+second_confirmation = process_infrastructure_notifications(datetime(2026, 9, 12, 12, 2, 0))
+assert second_confirmation["queued"] == 2
+db = get_db()
+incident_bodies = [row["body"] for row in db.execute(
+    "SELECT body FROM notification_outbox WHERE event_type='internal_infrastructure_incident' ORDER BY id"
+).fetchall()]
+assert len(incident_bodies) == 3
+assert any("Servidor indisponível" in body and "Cliente Teste" in body for body in incident_bodies)
+assert any("Backup concluído com erro" in body for body in incident_bodies)
+assert any("Firewall pfSense indisponível" in body and "tempo limite" in body for body in incident_bodies)
+db.execute("UPDATE agent_heartbeats SET last_seen='2026-09-12 12:03:00' WHERE servidor_log='SRV-ALERTA'")
+db.execute("""
+    INSERT INTO logs_email (servidor_log, status, data_email, conteudo_raw, message_id)
+    VALUES ('SRV-ALERTA', 'success', '2026-09-12 12:03:00', 'Backup concluido', 'infra-success-2')
+""")
+db.execute("UPDATE pfsense_firewalls SET last_status='online', last_error=NULL WHERE id=?", (firewall_id,))
+db.commit()
+db.close()
+recovered = process_infrastructure_notifications(datetime(2026, 9, 12, 12, 3, 0))
+assert recovered["queued"] == 3
+db = get_db()
+assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE event_type='internal_infrastructure_recovered'").fetchone()["c"] == 3
+db.close()
+assert notifications.process_notification_outbox() == {"sent": 6, "error": 0}
+
+from helpdesk import queue_internal_ticket_resolved
+
+db = get_db()
+db.execute("UPDATE helpdesk_tickets SET status='resolved', updated_at='2026-09-12 12:04:00' WHERE id=?", (api_result["ticket_id"],))
+assert queue_internal_ticket_resolved(db, api_result["ticket_id"], "Tecnico Teste") == 1
+db.commit()
+resolved_body = db.execute("SELECT body FROM notification_outbox WHERE event_type='internal_ticket_resolved'").fetchone()["body"]
+assert "*FP Ops | Chamado concluído*" in resolved_body
+assert "Situação: Resolvido" in resolved_body
+db.close()
+assert notifications.process_notification_outbox() == {"sent": 1, "error": 0}
 
 print("helpdesk-candidate-ok")

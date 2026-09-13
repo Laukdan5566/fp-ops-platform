@@ -33,6 +33,10 @@
                         <label class="form-label">Logins simultaneos</label>
                         <input name="max_sessoes" type="number" min="1" value="1" class="form-control">
                     </div>
+                    <div class="col-12 form-check ms-2">
+                        <input class="form-check-input" type="checkbox" name="is_technician" value="1" id="new-technician">
+                        <label class="form-check-label" for="new-technician">Técnico — pode receber alertas da infraestrutura dos clientes</label>
+                    </div>
                     <div class="col-12">
                         <button class="btn btn-primary">Criar usuario</button>
                     </div>
@@ -99,6 +103,7 @@
             <tr>
                 <th>Usuario</th>
                 <th>Tipo</th>
+                <th>Função</th>
                 <th>Status</th>
                 <th>Logins simultaneos</th>
                 <th>Sessoes ativas</th>
@@ -118,6 +123,7 @@
                             <option value="admin" {% if user.tipo == "admin" %}selected{% endif %}>Admin</option>
                         </select>
                     </td>
+                    <td><div class="form-check"><input class="form-check-input" type="checkbox" name="is_technician" value="1" id="technician-{{ user.id }}" {% if user.is_technician %}checked{% endif %}><label class="form-check-label" for="technician-{{ user.id }}">Técnico</label></div></td>
                     <td>
                         <select name="ativo" class="form-select form-select-sm">
                             <option value="1" {% if user.ativo %}selected{% endif %}>Ativo</option>

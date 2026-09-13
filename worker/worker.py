@@ -25,6 +25,7 @@ from pfsense_links import run_due_link_tests, run_requested_link_tests
 from pfsense_storage import run_storage_cleanup
 from ticketz_notifications import process_notification_outbox
 from helpdesk_reminders import queue_internal_reminders
+from infrastructure_notifications import process_infrastructure_notifications
 
 
 IMAP_CHECK_INTERVAL = int(os.getenv("IMAP_CHECK_INTERVAL", "300"))
@@ -537,6 +538,7 @@ if __name__ == "__main__":
                 run_due_link_tests()
                 run_storage_cleanup()
                 executar_retencao_automatica()
+                process_infrastructure_notifications()
                 next_full_run = time.monotonic() + IMAP_CHECK_INTERVAL
             run_requested_firewall_speedtests()
             run_requested_link_tests()

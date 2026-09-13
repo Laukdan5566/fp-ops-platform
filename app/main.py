@@ -2109,7 +2109,7 @@ def admin_painel():
     db.commit()
 
     usuarios = db.execute("""
-        SELECT u.id, u.username, u.tipo, u.ativo, u.max_sessoes,
+        SELECT u.id, u.username, u.tipo, u.ativo, u.max_sessoes, u.is_technician,
                COUNT(CASE WHEN us.ativo=1 THEN 1 END) AS sessoes_ativas,
                MAX(us.last_seen) AS ultimo_acesso
         FROM usuarios u
@@ -2153,6 +2153,7 @@ def admin_add_user():
     senha = request.form.get("senha", "")
     tipo = request.form.get("tipo", "operador")
     max_sessoes = max(1, int(request.form.get("max_sessoes") or 1))
+    is_technician = 1 if request.form.get("is_technician") == "1" else 0
 
     if not username or not senha:
         return redirect("/admin")
@@ -2160,9 +2161,9 @@ def admin_add_user():
     db = get_db()
     senha_hash = hash_password(senha)
     db.execute("""
-        INSERT INTO usuarios (username, senha_hash, tipo, ativo, max_sessoes)
-        VALUES (?, ?, ?, 1, ?)
-    """, (username, senha_hash, tipo, max_sessoes))
+        INSERT INTO usuarios (username, senha_hash, tipo, ativo, max_sessoes, is_technician)
+        VALUES (?, ?, ?, 1, ?, ?)
+    """, (username, senha_hash, tipo, max_sessoes, is_technician))
     db.commit()
     db.close()
     return redirect("/admin")
@@ -2176,6 +2177,7 @@ def admin_update_user(user_id):
     ativo = 1 if request.form.get("ativo") == "1" else 0
     max_sessoes = max(1, int(request.form.get("max_sessoes") or 1))
     nova_senha = request.form.get("senha", "")
+    is_technician = 1 if request.form.get("is_technician") == "1" else 0
 
     if user_id == session.get("user_id"):
         ativo = 1
@@ -2184,15 +2186,15 @@ def admin_update_user(user_id):
     if nova_senha:
         db.execute("""
             UPDATE usuarios
-            SET tipo=?, ativo=?, max_sessoes=?, senha_hash=?
+            SET tipo=?, ativo=?, max_sessoes=?, is_technician=?, senha_hash=?
             WHERE id=?
-        """, (tipo, ativo, max_sessoes, hash_password(nova_senha), user_id))
+        """, (tipo, ativo, max_sessoes, is_technician, hash_password(nova_senha), user_id))
     else:
         db.execute("""
             UPDATE usuarios
-            SET tipo=?, ativo=?, max_sessoes=?
+            SET tipo=?, ativo=?, max_sessoes=?, is_technician=?
             WHERE id=?
-        """, (tipo, ativo, max_sessoes, user_id))
+        """, (tipo, ativo, max_sessoes, is_technician, user_id))
 
     if not ativo:
         db.execute("""

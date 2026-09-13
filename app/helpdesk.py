@@ -111,6 +111,43 @@ def set_ticket_number(db, ticket_id):
     return number
 
 
+STATUS_PT = {
+    "open": "Aberto", "in_progress": "Em atendimento",
+    "waiting_customer": "Aguardando o cliente", "resolved": "Resolvido",
+    "closed": "Encerrado",
+}
+PRIORITY_PT = {"low": "Baixa", "normal": "Normal", "high": "Alta", "critical": "Crítica"}
+
+
+def ticket_message(ticket, event_type):
+    status = STATUS_PT.get(ticket["status"], ticket["status"])
+    name = ticket["contact_name"] or ticket["requester_name"]
+    hello = f"Olá, {name}.\n\n" if name else ""
+    if event_type == "ticket_opened":
+        return (
+            f"*FP Ops | Chamado recebido*\n\n{hello}"
+            f"Registramos o chamado *{ticket['numero']}*.\n"
+            f"Assunto: {ticket['assunto']}\n"
+            f"Prioridade: {PRIORITY_PT.get(ticket['prioridade'], ticket['prioridade'])}\n"
+            f"Situação: {status}\n\n"
+            "Nossa equipe acompanhará o atendimento e você será informado sobre as atualizações importantes."
+        )
+    if event_type == "ticket_resolved":
+        return (
+            f"*FP Ops | Chamado solucionado*\n\n{hello}"
+            f"O chamado *{ticket['numero']}* foi marcado como *{status}*.\n"
+            f"Assunto: {ticket['assunto']}\n\n"
+            "Se o problema continuar, responda ao atendimento para que a equipe possa reavaliar."
+        )
+    return (
+        f"*FP Ops | Atualização de chamado*\n\n{hello}"
+        f"Há uma nova atualização no chamado *{ticket['numero']}*.\n"
+        f"Assunto: {ticket['assunto']}\n"
+        f"Situação atual: {status}\n\n"
+        "Acompanhe o atendimento pelo canal em que o chamado foi aberto."
+    )
+
+
 def queue_notification(db, ticket_id, event_type):
     flag_by_event = {
         "ticket_opened": "notify_ticket_opened",
@@ -135,17 +172,7 @@ def queue_notification(db, ticket_id, event_type):
     recipient = normalize_phone(ticket["contact_phone"] or ticket["requester_phone"])
     if not recipient or (ticket["requester_contact_id"] and not int(ticket["whatsapp_enabled"] or 0)):
         return False
-    labels = {
-        "ticket_opened": "aberto",
-        "ticket_updated": "atualizado",
-        "ticket_resolved": "resolvido",
-    }
-    body = (
-        f"FP Ops: chamado {ticket['numero']} {labels[event_type]}.\n"
-        f"Assunto: {ticket['assunto']}\n"
-        f"Status: {ticket['status']}\n"
-        "A FP Informatica registrou esta atualizacao no atendimento."
-    )
+    body = ticket_message(ticket, event_type)
     idempotency_key = hashlib.sha256(
         f"{ticket_id}|{event_type}|{ticket['updated_at']}|{recipient}".encode("utf-8")
     ).hexdigest()
@@ -185,12 +212,13 @@ def queue_internal_new_ticket(db, ticket_id):
     """).fetchall()
     client = ticket["cliente_nome"] or ticket["requester_name"] or "Sem cliente"
     body = (
-        "FP Ops - novo chamado\n"
-        f"{ticket['numero']} [{ticket['prioridade']}]\n"
+        "*FP Ops | Novo chamado*\n\n"
+        f"Chamado: *{ticket['numero']}*\n"
+        f"Prioridade: {PRIORITY_PT.get(ticket['prioridade'], ticket['prioridade'])}\n"
         f"Cliente: {client}\n"
         f"Assunto: {ticket['assunto']}\n"
         f"Aberto por: {ticket['opened_by_name'] or 'Sistema'}\n"
-        "Status: aguardando atendimento\n"
+        "Situação: Aguardando atendimento\n\n"
         f"Abrir: {reminder['base_url'].rstrip('/')}/helpdesk/tickets/{ticket_id}"
     )
     queued = 0
@@ -210,6 +238,48 @@ def queue_internal_new_ticket(db, ticket_id):
         ))
         if inserted.rowcount:
             queued += 1
+    return queued
+
+
+def queue_internal_ticket_resolved(db, ticket_id, actor_name=None):
+    ticketz = db.execute("SELECT ativo, token_enc FROM ticketz_config WHERE id=1").fetchone()
+    reminder = db.execute("SELECT base_url FROM helpdesk_reminder_config WHERE id=1").fetchone()
+    if not ticketz or not int(ticketz["ativo"] or 0) or not ticketz["token_enc"]:
+        return 0
+    ticket = db.execute("""
+        SELECT t.*, c.nome_exibicao AS cliente_nome
+        FROM helpdesk_tickets t LEFT JOIN clientes c ON c.id=t.cliente_id WHERE t.id=?
+    """, (ticket_id,)).fetchone()
+    if not ticket:
+        return 0
+    recipients = db.execute("""
+        SELECT n.id, n.telefone FROM helpdesk_staff_notifications n
+        JOIN usuarios u ON u.id=n.user_id
+        WHERE n.ativo=1 AND u.ativo=1 ORDER BY n.id
+    """).fetchall()
+    base_url = (reminder["base_url"] if reminder else "https://bkp.fpinformatica.com.br").rstrip("/")
+    body = (
+        "*FP Ops | Chamado concluído*\n\n"
+        f"Chamado: *{ticket['numero']}*\n"
+        f"Cliente: {ticket['cliente_nome'] or ticket['requester_name'] or 'Sem cliente'}\n"
+        f"Assunto: {ticket['assunto']}\n"
+        f"Situação: {STATUS_PT.get(ticket['status'], ticket['status'])}\n"
+        f"Concluído por: {actor_name or 'Equipe técnica'}\n\n"
+        f"Consultar: {base_url}/helpdesk/tickets/{ticket_id}"
+    )
+    queued = 0
+    now = now_sql()
+    for recipient in recipients:
+        key = hashlib.sha256(
+            f"internal-ticket-resolved|{ticket_id}|{ticket['updated_at']}|{recipient['id']}".encode()
+        ).hexdigest()
+        result = db.execute("""
+            INSERT OR IGNORE INTO notification_outbox (
+                ticket_id, staff_recipient_id, recipient, event_type, body, status,
+                available_at, idempotency_key, created_at, updated_at
+            ) VALUES (?, ?, ?, 'internal_ticket_resolved', ?, 'pending', ?, ?, ?, ?)
+        """, (ticket_id, recipient["id"], recipient["telefone"], body, now, key, now, now))
+        queued += 1 if result.rowcount else 0
     return queued
 
 
@@ -396,6 +466,8 @@ def update_ticket(ticket_id):
         "assignee_user_id": assignee,
     })
     queue_notification(db, ticket_id, "ticket_resolved" if status in ("resolved", "closed") else "ticket_updated")
+    if status in ("resolved", "closed") and old["status"] not in ("resolved", "closed"):
+        queue_internal_ticket_resolved(db, ticket_id, session.get("username"))
     db.commit()
     db.close()
     return redirect(f"/helpdesk/tickets/{ticket_id}")
@@ -456,13 +528,13 @@ def toggle_contact(contact_id):
 def reminder_settings_context(db):
     config = db.execute("SELECT * FROM helpdesk_reminder_config WHERE id=1").fetchone()
     recipients = db.execute("""
-        SELECT n.*, u.username
+        SELECT n.*, u.username, u.is_technician
         FROM helpdesk_staff_notifications n
         JOIN usuarios u ON u.id=n.user_id
         ORDER BY n.ativo DESC, u.username
     """).fetchall()
     users = db.execute("""
-        SELECT u.id, u.username
+        SELECT u.id, u.username, u.is_technician
         FROM usuarios u
         WHERE u.ativo=1
         ORDER BY u.username
@@ -538,21 +610,26 @@ def save_reminder_recipient():
         1 if request.form.get("notify_unassigned") == "1" else 0,
         1 if request.form.get("notify_own") == "1" else 0,
         1 if request.form.get("notify_all_overdue") == "1" else 0,
+        1 if request.form.get("notify_servers") == "1" else 0,
+        1 if request.form.get("notify_backups") == "1" else 0,
+        1 if request.form.get("notify_pfsense") == "1" else 0,
         now_sql(),
     )
     if existing:
         db.execute("""
             UPDATE helpdesk_staff_notifications
-            SET telefone=?, notify_unassigned=?, notify_own=?, notify_all_overdue=?, ativo=1, updated_at=?
+            SET telefone=?, notify_unassigned=?, notify_own=?, notify_all_overdue=?,
+                notify_servers=?, notify_backups=?, notify_pfsense=?, ativo=1, updated_at=?
             WHERE id=?
         """, values + (existing["id"],))
     else:
         db.execute("""
             INSERT INTO helpdesk_staff_notifications (
                 user_id, telefone, notify_unassigned, notify_own, notify_all_overdue,
+                notify_servers, notify_backups, notify_pfsense,
                 ativo, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-        """, (user_id,) + values[:4] + (values[4], values[4]))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """, (user_id,) + values[:7] + (values[7], values[7]))
     db.commit()
     db.close()
     return redirect("/helpdesk/reminders")
