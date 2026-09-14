@@ -195,10 +195,14 @@ assert db.execute("SELECT COUNT(*) AS c FROM external_ticket_links").fetchone()[
 assert db.execute("SELECT COUNT(*) AS c FROM notification_outbox WHERE status='pending'").fetchone()["c"] == 2
 internal_opened = db.execute("SELECT * FROM notification_outbox WHERE event_type='internal_ticket_opened'").fetchone()
 assert internal_opened and internal_opened["recipient"] == "5511888888888"
-assert "*FP Ops | Novo chamado*" in internal_opened["body"]
+assert "*FP Ops | NOVO CHAMADO*" in internal_opened["body"]
+assert "*Motivo informado*" in internal_opened["body"]
+assert "Chamado criado pelo atendimento" in internal_opened["body"]
 customer_opened = db.execute("SELECT * FROM notification_outbox WHERE event_type='ticket_opened'").fetchone()
-assert customer_opened and "*FP Ops | Chamado recebido*" in customer_opened["body"]
-assert "Prioridade: Alta" in customer_opened["body"]
+assert customer_opened and "*FP Ops | CHAMADO RECEBIDO*" in customer_opened["body"]
+assert "*Prioridade:* Alta" in customer_opened["body"]
+assert "*Motivo informado*" in customer_opened["body"]
+assert "Chamado criado pelo atendimento" in customer_opened["body"]
 db.close()
 
 import worker.ticketz_notifications as notifications
@@ -304,8 +308,10 @@ db.execute("UPDATE helpdesk_tickets SET status='resolved', updated_at='2026-09-1
 assert queue_internal_ticket_resolved(db, api_result["ticket_id"], "Tecnico Teste") == 1
 db.commit()
 resolved_body = db.execute("SELECT body FROM notification_outbox WHERE event_type='internal_ticket_resolved'").fetchone()["body"]
-assert "*FP Ops | Chamado concluído*" in resolved_body
-assert "Situação: Resolvido" in resolved_body
+assert "*FP Ops | CHAMADO CONCLUÍDO*" in resolved_body
+assert "*Situação:* Resolvido" in resolved_body
+assert "*Motivo original*" in resolved_body
+assert "Chamado criado pelo atendimento" in resolved_body
 db.close()
 assert notifications.process_notification_outbox() == {"sent": 1, "error": 0}
 

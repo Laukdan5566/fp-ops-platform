@@ -119,31 +119,51 @@ STATUS_PT = {
 PRIORITY_PT = {"low": "Baixa", "normal": "Normal", "high": "Alta", "critical": "Crítica"}
 
 
+def message_excerpt(value, limit=1200):
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if not text:
+        return "Motivo não informado."
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
 def ticket_message(ticket, event_type):
     status = STATUS_PT.get(ticket["status"], ticket["status"])
     name = ticket["contact_name"] or ticket["requester_name"]
     hello = f"Olá, {name}.\n\n" if name else ""
+    reason = message_excerpt(ticket["descricao"])
     if event_type == "ticket_opened":
         return (
-            f"*FP Ops | Chamado recebido*\n\n{hello}"
-            f"Registramos o chamado *{ticket['numero']}*.\n"
-            f"Assunto: {ticket['assunto']}\n"
-            f"Prioridade: {PRIORITY_PT.get(ticket['prioridade'], ticket['prioridade'])}\n"
-            f"Situação: {status}\n\n"
+            f"*FP Ops | CHAMADO RECEBIDO*\n\n{hello}"
+            f"*Chamado:* {ticket['numero']}\n"
+            f"*Assunto:* {ticket['assunto']}\n"
+            f"*Prioridade:* {PRIORITY_PT.get(ticket['prioridade'], ticket['prioridade'])}\n"
+            f"*Situação:* {status}\n\n"
+            "*Motivo informado*\n"
+            f"{reason}\n\n"
+            "────────────\n"
             "Nossa equipe acompanhará o atendimento e você será informado sobre as atualizações importantes."
         )
     if event_type == "ticket_resolved":
         return (
-            f"*FP Ops | Chamado solucionado*\n\n{hello}"
-            f"O chamado *{ticket['numero']}* foi marcado como *{status}*.\n"
-            f"Assunto: {ticket['assunto']}\n\n"
+            f"*FP Ops | CHAMADO SOLUCIONADO*\n\n{hello}"
+            f"*Chamado:* {ticket['numero']}\n"
+            f"*Assunto:* {ticket['assunto']}\n"
+            f"*Situação:* {status}\n\n"
+            "*Motivo original*\n"
+            f"{reason}\n\n"
+            "────────────\n"
             "Se o problema continuar, responda ao atendimento para que a equipe possa reavaliar."
         )
     return (
-        f"*FP Ops | Atualização de chamado*\n\n{hello}"
-        f"Há uma nova atualização no chamado *{ticket['numero']}*.\n"
-        f"Assunto: {ticket['assunto']}\n"
-        f"Situação atual: {status}\n\n"
+        f"*FP Ops | ATUALIZAÇÃO DE CHAMADO*\n\n{hello}"
+        f"*Chamado:* {ticket['numero']}\n"
+        f"*Assunto:* {ticket['assunto']}\n"
+        f"*Situação atual:* {status}\n\n"
+        "*Motivo original*\n"
+        f"{reason}\n\n"
+        "────────────\n"
         "Acompanhe o atendimento pelo canal em que o chamado foi aberto."
     )
 
@@ -211,15 +231,19 @@ def queue_internal_new_ticket(db, ticket_id):
         ORDER BY n.id
     """).fetchall()
     client = ticket["cliente_nome"] or ticket["requester_name"] or "Sem cliente"
+    reason = message_excerpt(ticket["descricao"])
     body = (
-        "*FP Ops | Novo chamado*\n\n"
-        f"Chamado: *{ticket['numero']}*\n"
-        f"Prioridade: {PRIORITY_PT.get(ticket['prioridade'], ticket['prioridade'])}\n"
-        f"Cliente: {client}\n"
-        f"Assunto: {ticket['assunto']}\n"
-        f"Aberto por: {ticket['opened_by_name'] or 'Sistema'}\n"
-        "Situação: Aguardando atendimento\n\n"
-        f"Abrir: {reminder['base_url'].rstrip('/')}/helpdesk/tickets/{ticket_id}"
+        "*FP Ops | NOVO CHAMADO*\n\n"
+        f"*Chamado:* {ticket['numero']}\n"
+        f"*Cliente:* {client}\n"
+        f"*Solicitante:* {ticket['opened_by_name'] or ticket['requester_name'] or 'Sistema'}\n"
+        f"*Assunto:* {ticket['assunto']}\n"
+        f"*Prioridade:* {PRIORITY_PT.get(ticket['prioridade'], ticket['prioridade'])}\n\n"
+        "*Motivo informado*\n"
+        f"{reason}\n\n"
+        "────────────\n"
+        "*Situação:* Aguardando atendimento\n"
+        f"*Abrir chamado:* {reminder['base_url'].rstrip('/')}/helpdesk/tickets/{ticket_id}"
     )
     queued = 0
     now = now_sql()
@@ -258,14 +282,18 @@ def queue_internal_ticket_resolved(db, ticket_id, actor_name=None):
         WHERE n.ativo=1 AND u.ativo=1 ORDER BY n.id
     """).fetchall()
     base_url = (reminder["base_url"] if reminder else "https://bkp.fpinformatica.com.br").rstrip("/")
+    reason = message_excerpt(ticket["descricao"])
     body = (
-        "*FP Ops | Chamado concluído*\n\n"
-        f"Chamado: *{ticket['numero']}*\n"
-        f"Cliente: {ticket['cliente_nome'] or ticket['requester_name'] or 'Sem cliente'}\n"
-        f"Assunto: {ticket['assunto']}\n"
-        f"Situação: {STATUS_PT.get(ticket['status'], ticket['status'])}\n"
-        f"Concluído por: {actor_name or 'Equipe técnica'}\n\n"
-        f"Consultar: {base_url}/helpdesk/tickets/{ticket_id}"
+        "*FP Ops | CHAMADO CONCLUÍDO*\n\n"
+        f"*Chamado:* {ticket['numero']}\n"
+        f"*Cliente:* {ticket['cliente_nome'] or ticket['requester_name'] or 'Sem cliente'}\n"
+        f"*Assunto:* {ticket['assunto']}\n\n"
+        "*Motivo original*\n"
+        f"{reason}\n\n"
+        "────────────\n"
+        f"*Situação:* {STATUS_PT.get(ticket['status'], ticket['status'])}\n"
+        f"*Concluído por:* {actor_name or 'Equipe técnica'}\n"
+        f"*Consultar:* {base_url}/helpdesk/tickets/{ticket_id}"
     )
     queued = 0
     now = now_sql()
