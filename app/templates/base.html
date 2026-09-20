@@ -417,12 +417,14 @@
         <button class="menu-btn" type="button" onclick="toggleMenu()" aria-label="Abrir menu" aria-controls="sidebar">☰</button>
         <div class="topbar-context"><div class="topbar-eyebrow">FP Informática</div><div class="topbar-title">{{ title or "Operações" }}</div></div>
         <form class="global-search" method="get" action="/search" role="search"><span class="search-mark">⌕</span><input class="form-control" name="q" value="{{ request.args.get('q', '') if request.path == '/search' else '' }}" placeholder="Buscar cliente, servidor, firewall ou chamado" aria-label="Busca global"></form>
-        <div class="topbar-live"><span class="live-dot"></span><span>Plataforma online</span></div>
+        <button class="topbar-live" id="liveToggle" type="button" aria-pressed="false" title="Atualização automática" hidden><span class="live-dot"></span><span id="liveLabel">Ao vivo</span></button>
     </header>
 
-    <main class="page-shell">{% block content %}{% endblock %}</main>
+    <main class="page-shell" id="pageShell">{% block content %}{% endblock %}</main>
 
 </div>
+<div class="nav-progress" id="navProgress" aria-hidden="true"></div>
+<div class="toast-stack" id="toastStack" role="status" aria-live="polite"></div>
 
 <script>
 const sidebarStorageKey = "fpOpsSidebarPinned";
@@ -459,6 +461,148 @@ if (localStorage.getItem(sidebarStorageKey) === "true" && !isMobileNavigation())
     document.body.classList.add("sidebar-pinned");
 }
 updateSidebarPinButton();
+
+const CSRF_TOKEN = "{{ csrf_token }}";
+
+function withCsrf(form) {
+    if (!form.querySelector('input[name="_csrf_token"]') && (form.method || "").toLowerCase() === "post") {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "_csrf_token";
+        input.value = CSRF_TOKEN;
+        form.appendChild(input);
+    }
+}
+
+function showToast(message, kind) {
+    const stack = document.getElementById("toastStack");
+    if (!stack) return;
+    const toast = document.createElement("div");
+    toast.className = "toast-item " + (kind || "info");
+    toast.textContent = message;
+    stack.appendChild(toast);
+    setTimeout(() => toast.classList.add("leaving"), 3800);
+    setTimeout(() => toast.remove(), 4300);
+}
+
+function startProgress() {
+    const bar = document.getElementById("navProgress");
+    if (bar) bar.classList.add("active");
+}
+
+document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    withCsrf(form);
+    if (event.defaultPrevented) return;
+    startProgress();
+    // evita duplo envio (cliques repetidos criam registros duplicados)
+    form.querySelectorAll('button:not([type]), button[type="submit"]').forEach((button) => {
+        setTimeout(() => { button.disabled = true; button.classList.add("is-busy"); }, 0);
+    });
+});
+
+window.addEventListener("pageshow", () => {
+    const bar = document.getElementById("navProgress");
+    if (bar) bar.classList.remove("active");
+    document.querySelectorAll("button.is-busy").forEach((button) => { button.disabled = false; button.classList.remove("is-busy"); });
+});
+
+// Ações que alteram dados (excluir, ativar/desativar) enviadas por POST com CSRF
+document.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-post]");
+    if (link) {
+        event.preventDefault();
+        const message = link.getAttribute("data-confirm");
+        if (message && !window.confirm(message)) return;
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = link.getAttribute("data-post");
+        form.style.display = "none";
+        document.body.appendChild(form);
+        withCsrf(form);
+        startProgress();
+        form.submit();
+        return;
+    }
+    const nav = event.target.closest("a[href]");
+    if (nav && !event.defaultPrevented && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.button === 0
+        && nav.target !== "_blank" && !nav.hasAttribute("download") && nav.origin === location.origin
+        && !nav.getAttribute("href").startsWith("#") && !nav.pathname.startsWith("/static/")
+        && !/\/(agent-exe|agent-package|download)/.test(nav.pathname)) {
+        startProgress();
+    }
+});
+
+// Atualização automática sem recarregar a página inteira
+(function () {
+    const LIVE_PATHS = ["/dashboard", "/backups", "/disponibilidade", "/tempo-online", "/status", "/pfsense", "/helpdesk", "/windows-events"];
+    const path = location.pathname.replace(/\/+$/, "") || "/";
+    const toggle = document.getElementById("liveToggle");
+    const label = document.getElementById("liveLabel");
+    const shell = document.getElementById("pageShell");
+    if (!toggle || !shell || !LIVE_PATHS.includes(path)) return;
+
+    const INTERVAL_MS = 30000;
+    const key = "fpOpsLiveRefresh";
+    let enabled = true;
+    try { enabled = localStorage.getItem(key) !== "off"; } catch (e) {}
+    let busy = false;
+    let lastOk = new Date();
+
+    toggle.hidden = false;
+
+    function render() {
+        toggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+        toggle.classList.toggle("paused", !enabled);
+        const time = lastOk.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        label.textContent = enabled ? "Ao vivo · " + time : "Pausado · " + time;
+    }
+
+    function userIsEditing() {
+        const el = document.activeElement;
+        if (el && shell.contains(el) && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+        return !!shell.querySelector("form.is-dirty");
+    }
+
+    async function refresh() {
+        if (!enabled || busy || document.hidden || userIsEditing()) return;
+        busy = true;
+        try {
+            const response = await fetch(location.href, { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" });
+            if (response.redirected && response.url.includes("/login")) { location.reload(); return; }
+            if (!response.ok) throw new Error(response.status);
+            const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+            const fresh = doc.getElementById("pageShell");
+            if (fresh && !userIsEditing()) {
+                const scroll = window.scrollY;
+                shell.innerHTML = fresh.innerHTML;
+                window.scrollTo(0, scroll);
+            }
+            lastOk = new Date();
+        } catch (error) {
+            label.textContent = "Sem conexão · tentando…";
+            busy = false;
+            return;
+        }
+        busy = false;
+        render();
+    }
+
+    shell.addEventListener("input", (event) => {
+        const form = event.target.closest("form");
+        if (form) form.classList.add("is-dirty");
+    });
+    toggle.addEventListener("click", () => {
+        enabled = !enabled;
+        try { localStorage.setItem(key, enabled ? "on" : "off"); } catch (e) {}
+        render();
+        if (enabled) refresh();
+    });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastOk.getTime() > INTERVAL_MS) refresh(); });
+    setInterval(refresh, INTERVAL_MS);
+    render();
+})();
 </script>
 
 </body>

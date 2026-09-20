@@ -397,7 +397,22 @@ def preparar_requisicao():
         finally:
             db.close()
 
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and not request.path.startswith("/api/"):
+            expected = session.get("helpdesk_csrf_token") or ""
+            supplied = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token", "")
+            if not expected or not supplied or not secrets.compare_digest(expected, supplied):
+                return "Formulário expirado. Recarregue a página e tente novamente.", 400
+
     return None
+
+
+@app.context_processor
+def inject_csrf_token():
+    token = session.get("helpdesk_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["helpdesk_csrf_token"] = token
+    return {"csrf_token": token}
 
 
 def extrair_api_token():
@@ -1111,7 +1126,7 @@ def save_cliente_windows_alerts(cliente_id):
     return redirect("/")
 
 
-@app.route("/clientes/delete/<int:id>")
+@app.route("/clientes/delete/<int:id>", methods=["POST"])
 @login_required
 @admin_required
 def delete_cliente(id):
@@ -1122,7 +1137,7 @@ def delete_cliente(id):
     return redirect("/")
 
 
-@app.route("/clientes/toggle/<int:id>")
+@app.route("/clientes/toggle/<int:id>", methods=["POST"])
 @login_required
 @admin_required
 def toggle_cliente(id):
@@ -1175,7 +1190,7 @@ def add_servidor(cliente_id):
     return redirect(f"/servidores/{cliente_id}")
 
 
-@app.route("/servidores/delete/<int:id>/<int:cliente_id>")
+@app.route("/servidores/delete/<int:id>/<int:cliente_id>", methods=["POST"])
 @login_required
 @admin_required
 def delete_servidor(id, cliente_id):
@@ -1187,7 +1202,7 @@ def delete_servidor(id, cliente_id):
     return redirect(f"/servidores/{cliente_id}")
 
 
-@app.route("/servidores/toggle/<int:id>/<int:cliente_id>")
+@app.route("/servidores/toggle/<int:id>/<int:cliente_id>", methods=["POST"])
 @login_required
 @admin_required
 def toggle_servidor(id, cliente_id):
@@ -2398,7 +2413,7 @@ def create_api_key():
     return redirect("/api-keys")
 
 
-@app.route("/api-keys/toggle/<int:key_id>")
+@app.route("/api-keys/toggle/<int:key_id>", methods=["POST"])
 @login_required
 @admin_required
 def toggle_api_key(key_id):
@@ -3391,7 +3406,7 @@ def update_agendamento(ag_id):
 
     return redirect(f"/servidores/editar/{servidor_id}")
 
-@app.route("/agendamento/delete/<int:ag_id>/<int:servidor_id>")
+@app.route("/agendamento/delete/<int:ag_id>/<int:servidor_id>", methods=["POST"])
 @login_required
 @admin_required
 def delete_agendamento(ag_id, servidor_id):
