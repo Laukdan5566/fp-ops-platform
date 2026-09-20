@@ -92,7 +92,7 @@
             <td>{{ key.created_at }}</td>
             <td>{{ key.last_used_at or "-" }}</td>
             <td>
-                <a class="btn btn-sm btn-outline-secondary" href="/api-keys/toggle/{{ key.id }}">
+                <a class="btn btn-sm btn-outline-secondary" href="#" data-post="/api-keys/toggle/{{ key.id }}">
                     {% if key.ativo %}Desativar{% else %}Ativar{% endif %}
                 </a>
             </td>
