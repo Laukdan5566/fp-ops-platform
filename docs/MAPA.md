@@ -8,23 +8,25 @@ Flask + Postgres (3 containers: `web`, `worker`, `postgres`) que recebe e-mails/
 
 ## Peças
 
-| Peça | Onde | O que faz | Tamanho |
-|---|---|---|---|
-| Painel web | `app/main.py` | dashboard, clientes, servidores, uptime, usuários, API dos agentes (pfSense já saiu para `pfsense_web.py`) | ~3.400 linhas |
-| Telas de pfSense | `app/pfsense_web.py` (Blueprint) | lista, detalhe, links de internet, armazenamento FTP, download de backup | 820 |
-| Acesso | `app/auth.py` | `login_required`, `admin_required`, `support_required` (único para painel e helpdesk) | |
-| Utilitários | `app/util.py` | datas, idade, uptime do pfSense (funções puras) | |
-| Helpdesk | `app/helpdesk.py`, `app/templates/helpdesk/` | chamados, contatos, SLA, auditoria, API para o Ticketz criar chamado | 858 |
-| Banco | `app/db.py` | schema, migrações "se faltar coluna" e camada que faz o Postgres parecer SQLite (`?`, `AUTOINCREMENT`) | 1.131 |
-| Segredos | `app/secret_store.py` | Fernet para senhas/chaves e para os backups de firewall | |
-| Armazenamento FTP | `app/pfsense_storage.py` | envia backup de firewall ao FTP `10.11.11.2:10050` e limpa o que passa de N dias | 231 |
-| Worker | `worker/worker.py` | laço de 5 s; a cada 300 s: lê e-mails IMAP, Zammad, retenção, firewalls, alertas | 553 |
-| pfSense | `worker/pfsense_agent.py` | SSH no firewall, métricas, baixa `config.xml`, cifra, grava, limpa local | 595 |
-| Links de internet | `worker/pfsense_links.py` | sonda de links/gateways | 296 |
-| Alertas | `worker/infrastructure_notifications.py`, `helpdesk_reminders.py` | fila de notificações (WhatsApp/Ticketz) | 309 |
-| Zammad | `worker/zammad.py` | cria/atualiza chamados no Zammad | 672 |
-| Agente Windows | `agents/windows-backup-agent.ps1` + instaladores `.ps1`/`.exe` | roda nos servidores dos clientes e envia batimento e logs | 1.335 |
-| Backup do próprio monitor | `ops/backup-monitor-pg-backup.sh`, `...-db-backup.sh` | dump do Postgres | |
+`app/main.py` (101 linhas) só monta o aplicativo: configuração, cabeçalhos de segurança, checagem de sessão/CSRF e registro dos módulos abaixo. Tudo roda em `/app` dentro do container (`COPY app /app`).
+
+| Módulo | O que faz | Linhas |
+|---|---|---|
+| `login_web.py` | login (limite de sessões simultâneas), logout, favicon | |
+| `cadastros.py` | clientes, servidores, agendamentos de backup, busca global, servidores detectados nos logs | 412 |
+| `monitoramento.py` | dashboard, backups, disponibilidade/tempo online, histórico, status do sistema, eventos do Windows | 1.086 |
+| `admin_web.py` | usuários e sessões, retenção (edição e **resumo em `/admin/retencao`**), chaves de API, Zammad, e-mail | 368 |
+| `pacotes_agente.py` | download do pacote/instalador/configuração do agente por cliente | 437 |
+| `api_agentes.py` | API dos agentes: ingestão de logs, eventos do Windows, batimento, `/health` | 413 |
+| `agentes.py` | regras dos agentes: versão atual, chave de API, recuperação de servidor, hash dos pacotes | 300 |
+| `pfsense_web.py` | telas de pfSense: lista, detalhe, links, armazenamento FTP, download de backup | 840 |
+| `helpdesk.py` + `templates/helpdesk/` | chamados, contatos, SLA, auditoria, API para o Ticketz | 840 |
+| `sessao.py`, `auth.py`, `util.py` | sessão/senha, decoradores de acesso, funções puras de data e texto | |
+| `retencao.py` | limpeza automática/manual dos logs do banco | 137 |
+| `db.py`, `secret_store.py`, `pfsense_storage.py` | banco (SQLite/Postgres), cifra, envio e limpeza no FTP | |
+| `worker/*` | laço de 5 s (a cada 300 s: e-mails IMAP, Zammad, retenção, firewalls, alertas), SSH no pfSense, links, notificações | |
+| `agents/*` | agente Windows (PowerShell) e instaladores | |
+| `ops/*` | backups do próprio monitor, `deploy.sh`, `rollback.sh` | |
 
 ## Fluxo dos backups de firewall (o que mexemos hoje)
 1. `run_due_firewalls` (worker) → para cada firewall ativo, se venceu o intervalo de checagem (5 min) → `run_firewall_check`.
@@ -36,9 +38,9 @@ Flask + Postgres (3 containers: `web`, `worker`, `postgres`) que recebe e-mails/
 
 | # | Ponto | Situação |
 |---|---|---|
-| 1 | `main.py` fazia tudo | **Parcial**: telas de pfSense viraram Blueprint (4.245 → ~3.400 linhas), rotas congeladas em `tests/rotas_esperadas.txt`. Próximos blocos: API dos agentes (`/api/*`, `/health`), chaves de API, usuários/admin, relatórios de uptime. |
+| 1 | `main.py` fazia tudo | **Feito**: 4.245 → 101 linhas; cada área virou um módulo/Blueprint. As rotas estão congeladas em `tests/rotas_esperadas.txt` (97). |
 | 2 | Autenticação duplicada | **Feito** (`auth.py`). |
-| 3 | Retenção espalhada | **Parcial**: teste para cada regra (local, FTP, offline). Falta a tela única de retenção. |
+| 3 | Retenção espalhada | **Feito**: teste para cada regra e tela única `/admin/retencao` (logs, backups de firewall no disco e no FTP). |
 | 4 | Testes soltos | **Feito**: `python tests/run_all.py` + GitHub Actions. |
 | 5 | Deploy manual | **Feito**: `ops/deploy.sh` e `ops/rollback.sh`. |
 | 6 | Correção sem commit | **Feito**. |
