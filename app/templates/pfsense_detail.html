@@ -46,7 +46,7 @@
                 <div class="col-6"><strong>OpenVPN:</strong> {{ metrics.OPENVPN_PROCESSES or 0 }}</div>
                 <div class="col-6"><strong>WireGuard:</strong> {{ metrics.WIREGUARD_INTERFACES or 0 }}</div>
                 <div class="col-6"><strong>IPsec:</strong> {{ metrics.IPSEC_PROCESSES or 0 }}</div>
-                <div class="col-6"><strong>Ultima verificacao:</strong> {{ firewall.last_check_at or "-" }}</div>
+                <div class="col-6"><strong>Ultima verificacao:</strong> {{ firewall.last_check_at | br_datetime }}</div>
             </div>
         </div>
     </div>
@@ -61,7 +61,7 @@
                 <div class="col-6"><strong>OpenVPN:</strong> {{ metrics.openvpn_servers_configured or 0 }}</div>
                 <div class="col-6"><strong>DHCP:</strong> {{ metrics.dhcp_scopes or 0 }}</div>
                 <div class="col-6"><strong>IPsec:</strong> {{ metrics.ipsec_phase1 or 0 }}/{{ metrics.ipsec_phase2 or 0 }}</div>
-                <div class="col-6"><strong>Ultimo backup:</strong> {{ firewall.last_backup_at or "-" }}</div>
+                <div class="col-6"><strong>Ultimo backup:</strong> {{ firewall.last_backup_at | br_datetime }}</div>
             </div>
         </div>
     </div>
@@ -156,7 +156,7 @@
     <tbody>
     {% for backup in backups %}
         <tr>
-            <td>{{ backup.created_at }}</td>
+            <td>{{ backup.created_at | br_datetime }}</td>
             <td><code>{{ backup.config_hash[:16] }}...</code></td>
             <td>{{ backup.size_bytes }} bytes</td>
             <td>{{ "sim" if backup.changed else "nao" }}</td>
@@ -195,7 +195,7 @@
     <tbody>
     {% for check in checks %}
         <tr>
-            <td>{{ check.checked_at }}</td>
+            <td>{{ check.checked_at | br_datetime }}</td>
             <td><span class="badge {{ 'bg-success' if check.status == 'online' else 'bg-danger' }}">{{ check.status }}</span></td>
             <td>{{ check.latency_ms or 0 }} ms</td>
             <td>{{ check.version or "-" }}</td>

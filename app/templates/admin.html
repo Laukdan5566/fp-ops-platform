@@ -167,7 +167,7 @@
                     <tr>
                         <td>{{ sessao.username }}</td>
                         <td>{{ sessao.ip or "-" }}</td>
-                        <td>{{ sessao.created_at }}</td>
+                        <td>{{ sessao.created_at | br_datetime }}</td>
                         <td>{{ sessao.last_seen }}</td>
                     </tr>
                     {% endfor %}

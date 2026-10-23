@@ -117,7 +117,7 @@
     <tbody>
         {% for alerta in alertas %}
         <tr>
-            <td>{{ alerta.created_at }}</td>
+            <td>{{ alerta.created_at | br_datetime }}</td>
             <td>{{ alerta.servidor_log }}</td>
             <td>{{ alerta.status_backup }}</td>
             <td>
