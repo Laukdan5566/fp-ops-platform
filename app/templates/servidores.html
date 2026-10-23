@@ -81,15 +81,15 @@
                 </a>
 
                 <!-- ATIVAR/DESATIVAR -->
-                <a href="/servidores/toggle/{{s.id}}/{{cliente.id}}"
+                <a href="#" data-post="/servidores/toggle/{{s.id}}/{{cliente.id}}"
                    class="btn btn-warning btn-sm">
                     🔄 Ativar/Desativar
                 </a>
 
                 <!-- EXCLUIR -->
-                <a href="/servidores/delete/{{s.id}}/{{cliente.id}}"
+                <a href="#" data-post="/servidores/delete/{{s.id}}/{{cliente.id}}"
                    class="btn btn-danger btn-sm"
-                   onclick="return confirm('Tem certeza que deseja excluir este servidor?')">
+                   data-confirm="Tem certeza que deseja excluir este servidor?">
                     ❌ Excluir
                 </a>
                 {% else %}

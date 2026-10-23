@@ -16,7 +16,8 @@ os.environ.setdefault("DB_PATH", str(temp_dir / "test.db"))
 os.environ["CREDENTIAL_KEY_FILE"] = str(key_file)
 
 from db import get_db
-from main import app, hash_password
+from main import app
+from sessao import hash_password
 from secret_store import encrypt_secret
 
 

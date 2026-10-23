@@ -89,10 +89,10 @@
                     <span class="badge bg-secondary">inativa</span>
                 {% endif %}
             </td>
-            <td>{{ key.created_at }}</td>
+            <td>{{ key.created_at | br_datetime }}</td>
             <td>{{ key.last_used_at or "-" }}</td>
             <td>
-                <a class="btn btn-sm btn-outline-secondary" href="/api-keys/toggle/{{ key.id }}">
+                <a class="btn btn-sm btn-outline-secondary" href="#" data-post="/api-keys/toggle/{{ key.id }}">
                     {% if key.ativo %}Desativar{% else %}Ativar{% endif %}
                 </a>
             </td>

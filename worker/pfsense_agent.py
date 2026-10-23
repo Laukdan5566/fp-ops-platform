@@ -349,7 +349,8 @@ def prune_backups(db, firewall):
         "SELECT id, created_at, file_path FROM pfsense_backups WHERE firewall_id=? ORDER BY id",
         (firewall["id"],),
     ).fetchall()
-    for row in rows:
+    # O backup mais novo nunca e apagado: num firewall fora do ar e a unica copia boa que existe.
+    for row in rows[:-1]:
         created = parse_time(row["created_at"])
         if not created or created >= cutoff:
             continue
@@ -549,6 +550,12 @@ def run_firewall_check(firewall, force_backup=False):
             (checked_at, error, checked_at, firewall["id"]),
         )
         db.commit()
+        # Firewall fora do ar tambem precisa perder os backups acima da retencao (antes so limpava quando conectava).
+        try:
+            prune_backups(db, firewall)
+            db.commit()
+        except Exception:
+            db.rollback()
         return {"status": "error", "error": error}
     finally:
         if client:

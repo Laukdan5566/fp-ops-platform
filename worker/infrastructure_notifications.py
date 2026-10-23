@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -7,6 +8,7 @@ from db import get_db
 
 
 BRASILIA = ZoneInfo("America/Sao_Paulo")
+REMINDER_HOURS = int(os.getenv("INFRA_INCIDENT_REMINDER_HOURS", "24"))
 PROBLEM_STATES = {
     "server_offline", "backup_error", "backup_warning", "backup_overdue", "pfsense_offline"
 }
@@ -114,6 +116,27 @@ def recovery_message(resource, resolved_at, opened_at):
         f"Normalizado em: {br_time(resolved_at)} (Brasília)\n"
         f"{duration_line}Situação atual: Operacional\n\n"
         "O monitoramento voltou a receber evidências válidas. O incidente foi encerrado automaticamente."
+    )
+
+
+def reminder_due(state, now):
+    """Incidente aberto (alguem foi avisado) ha mais de REMINDER_HOURS desde o aviso ou lembrete mais recente."""
+    opened_at = parse_time(state["incident_opened_at"])
+    if not opened_at:
+        return False
+    last = parse_time(state["last_reminder_at"]) or opened_at
+    return now - last >= timedelta(hours=REMINDER_HOURS)
+
+
+def reminder_message(resource, now, opened_at):
+    client = f"Cliente: {resource['client']}\n" if resource.get("client") else ""
+    since = f"Aberto desde: {br_time(opened_at)} (Brasília) — {duration_label(opened_at, now)}\n" if opened_at else ""
+    return (
+        f"*FP Ops | INCIDENTE CONTINUA — {state_label(resource['state'])}*\n\n"
+        f"{client}Equipamento: {resource['name']}\n"
+        f"{since}"
+        f"Detalhes: {translated_detail(resource.get('detail'))}\n\n"
+        "Nenhuma normalização foi detectada desde o primeiro aviso. Um novo lembrete sai em 24 horas se continuar assim."
     )
 
 
@@ -233,7 +256,7 @@ def process_infrastructure_notifications(now=None):
     if now.tzinfo:
         now = now.astimezone(timezone.utc).replace(tzinfo=None)
     db = get_db()
-    result = {"queued": 0, "incidents": 0, "recoveries": 0, "resources": 0}
+    result = {"queued": 0, "incidents": 0, "recoveries": 0, "reminders": 0, "resources": 0}
     try:
         ticketz = db.execute("SELECT ativo, token_enc FROM ticketz_config WHERE id=1").fetchone()
         enabled = bool(ticketz and int(ticketz["ativo"] or 0) and ticketz["token_enc"])
@@ -259,6 +282,18 @@ def process_infrastructure_notifications(now=None):
                     UPDATE infrastructure_notification_state
                     SET pending_state=NULL, pending_count=0, last_detail=?, updated_at=? WHERE id=?
                 """, (resource["detail"], now_text, state["id"]))
+                if is_problem and enabled and reminder_due(state, now):
+                    reminded = queue_for_technicians(
+                        db, resource, reminder_message(resource, now, parse_time(state["incident_opened_at"])),
+                        "internal_infrastructure_reminder", now,
+                    )
+                    if reminded:
+                        db.execute(
+                            "UPDATE infrastructure_notification_state SET last_reminder_at=? WHERE id=?",
+                            (now_text, state["id"]),
+                        )
+                        result["reminders"] += 1
+                        result["queued"] += reminded
                 continue
             if old_problem and is_problem:
                 db.execute("""

@@ -955,6 +955,7 @@ def init_db():
         UNIQUE(resource_type, resource_id)
     )
     """)
+    add_column_if_missing(cur, "infrastructure_notification_state", "last_reminder_at", "TEXT")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS notification_attempts (
