@@ -1,8 +1,8 @@
 """Funcoes puras de data/hora e formatacao usadas pelo painel e pelos modulos de rotas."""
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 import hashlib
 import re
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 
 def parse_data(valor):

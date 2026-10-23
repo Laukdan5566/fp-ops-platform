@@ -1,18 +1,15 @@
 """Regras dos agentes Windows: versao atual, autenticacao por chave de API e recuperacao automatica de servidores."""
-from datetime import datetime
-from datetime import timezone
-from pathlib import Path
 import hashlib
 import json
 import os
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import request
 
 from db import get_db
-from util import agora_sql
-from util import hash_token
-from util import normalizar_servidor
+from util import agora_sql, hash_token, normalizar_servidor
 
 LATEST_AGENT_VERSION = "1.3.1"
 AGENT_UPDATE_URL = "https://bkp.fpinformatica.com.br/static/backup-monitor-agent.zip"
@@ -25,7 +22,11 @@ _AGENT_PACKAGE_HASH_CACHE = {}
 
 def agent_package_sha256(filename):
     path = Path(__file__).resolve().parent / "static" / filename
-    stat = path.stat()
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        # Pacote ausente: o batimento nao pode quebrar. Sem hash o agente recusa atualizar (ele exige o SHA-256).
+        return None
     cached = _AGENT_PACKAGE_HASH_CACHE.get(filename)
     if cached and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
         return cached[2]
