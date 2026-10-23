@@ -14,7 +14,8 @@ os.environ["DB_PATH"] = str(temp_dir / "test.db")
 os.environ["CREDENTIAL_KEY_FILE"] = str(key_file)
 
 from db import get_db
-from main import app, hash_password
+from main import app
+from sessao import hash_password
 
 db = get_db()
 ids = {}

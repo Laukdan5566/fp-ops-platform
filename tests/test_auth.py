@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 
-from flask import Flask, session
+from flask import Flask
 
 from auth import admin_required, login_required, support_required
 
