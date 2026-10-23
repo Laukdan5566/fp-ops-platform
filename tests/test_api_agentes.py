@@ -35,8 +35,24 @@ assert http.get("/health").status_code == 200
 # sem chave / chave errada
 assert http.post("/api/agent/heartbeat", json={"servidor_log": "SRV-API"}).status_code == 401
 assert http.post("/api/agent/heartbeat", json={"servidor_log": "SRV-API"}, headers={"X-API-Key": "errada"}).status_code == 401
-# chave de outro cliente nao fala por este servidor
+# chave de outro cliente nao fala por este servidor e a recusa fica no log (para achar o agente mal configurado)
+import logging
+
+
+class Captura(logging.Handler):
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.mensagens = []
+
+    def emit(self, registro):
+        self.mensagens.append(registro.getMessage())
+
+
+captura = Captura()
+logging.getLogger("api_agentes").addHandler(captura)
 assert http.post("/api/agent/heartbeat", json={"servidor_log": "SRV-API"}, headers={"Authorization": "Bearer token-alheio"}).status_code == 403
+assert any("SRV-API" in m and "heartbeat" in m and "chave" in m for m in captura.mensagens), captura.mensagens
+assert "token-alheio" not in " ".join(captura.mensagens), "nunca registrar o token"
 
 # batimento valido grava e devolve a versao atual do agente
 r = http.post("/api/agent/heartbeat", json={"servidor_log": "srv-api", "hostname": "srv-api", "agent_version": "1.0.0"}, headers=auth)

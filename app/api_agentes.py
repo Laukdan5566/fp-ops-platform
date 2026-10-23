@@ -1,5 +1,6 @@
 """API dos agentes Windows e dos coletores: ingestao de logs, eventos do Windows, batimento e consulta de log."""
 import hashlib
+import logging
 import json
 from datetime import datetime
 
@@ -27,6 +28,24 @@ from util import hash_conteudo, normalizar_servidor
 
 
 bp = Blueprint("api_agentes", __name__)
+logger = logging.getLogger("api_agentes")
+
+
+def _chave_recusada(key, servidor, rota, detalhado=True):
+    """403 quando a chave de API e valida mas nao pode falar por este servidor; registra quem foi (nunca o token)."""
+    logger.warning(
+        "API de agente recusada (403) em %s: servidor=%s chave_id=%s chave_cliente=%s chave_servidor=%s",
+        rota, servidor, key["id"], key["cliente_id"], key["servidor_log"],
+    )
+    corpo = {"error": "api key not allowed for this server"}
+    if detalhado:
+        corpo.update({
+            "servidor_log": servidor,
+            "api_key_id": key["id"],
+            "api_key_cliente_id": key["cliente_id"],
+            "api_key_servidor_log": key["servidor_log"],
+        })
+    return jsonify(corpo), 403
 
 
 @bp.route("/api/logs/ingest", methods=["POST"])
@@ -48,13 +67,7 @@ def ingest_log():
 
     key = garantir_servidor_recuperado(db, key, servidor)
     if not api_key_autorizada_para_servidor(key, servidor, db):
-        return jsonify({
-            "error": "api key not allowed for this server",
-            "servidor_log": servidor,
-            "api_key_id": key["id"],
-            "api_key_cliente_id": key["cliente_id"],
-            "api_key_servidor_log": key["servidor_log"],
-        }), 403
+        return _chave_recusada(key, servidor, "ingest_log")
 
     body = payload.get("conteudo_raw") or payload.get("body") or payload.get("log") or ""
     subject = payload.get("subject") or payload.get("assunto") or f"Log local - {servidor}"
@@ -140,7 +153,7 @@ def agent_windows_events():
     if servidor:
         key = garantir_servidor_recuperado(db, key, servidor)
         if not api_key_autorizada_para_servidor(key, servidor, db):
-            return jsonify({"error": "api key not allowed for this server"}), 403
+            return _chave_recusada(key, servidor, "agent_windows_events", detalhado=False)
 
     cliente_id = key["cliente_id"]
     if not cliente_id and servidor:
@@ -247,13 +260,7 @@ def agent_heartbeat():
 
     key = garantir_servidor_recuperado(db, key, servidor)
     if not api_key_autorizada_para_servidor(key, servidor, db):
-        return jsonify({
-            "error": "api key not allowed for this server",
-            "servidor_log": servidor,
-            "api_key_id": key["id"],
-            "api_key_cliente_id": key["cliente_id"],
-            "api_key_servidor_log": key["servidor_log"],
-        }), 403
+        return _chave_recusada(key, servidor, "agent_heartbeat")
 
     existe_servidor = db.execute("""
         SELECT id
@@ -352,13 +359,7 @@ def log_exists():
 
     key = garantir_servidor_recuperado(db, key, servidor)
     if not api_key_autorizada_para_servidor(key, servidor, db):
-        return jsonify({
-            "error": "api key not allowed for this server",
-            "servidor_log": servidor,
-            "api_key_id": key["id"],
-            "api_key_cliente_id": key["cliente_id"],
-            "api_key_servidor_log": key["servidor_log"],
-        }), 403
+        return _chave_recusada(key, servidor, "log_exists")
 
     message_id = payload.get("message_id")
     conteudo_hash = payload.get("conteudo_hash")
