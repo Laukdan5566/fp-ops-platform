@@ -1,16 +1,15 @@
-from flask import Flask, render_template, request, redirect, session, Response
-from db import DB_PATH, USING_POSTGRES, get_db, init_db
-from datetime import datetime, timedelta, timezone
-import hashlib
 import io
 import json
-import secrets
 import os
 import re
-import shutil
+import secrets
 import zipfile
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from werkzeug.security import check_password_hash, generate_password_hash
+
+from flask import Flask, Response, redirect, render_template, request, session
+
+from db import get_db, init_db
 
 app = Flask(__name__)
 secret_key = os.getenv("SECRET_KEY", "").strip()
@@ -51,23 +50,10 @@ def add_security_headers(response):
     return response
 
 
-def hash_password(password):
-    return generate_password_hash(password, method="scrypt")
-
-
-def verify_password(stored_hash, password):
-    stored_hash = stored_hash or ""
-    if re.fullmatch(r"[0-9a-fA-F]{64}", stored_hash):
-        legacy_hash = hashlib.sha256(password.encode()).hexdigest()
-        valid = secrets.compare_digest(stored_hash.lower(), legacy_hash)
-        return valid, valid
-    try:
-        return check_password_hash(stored_hash, password), False
-    except (TypeError, ValueError):
-        return False, False
-
 init_db()
 from auth import admin_required, login_required, support_required
+from retencao import executar_retencao, retention_config
+from sessao import criar_sessao_usuario, hash_password, limpar_sessoes_expiradas, sessao_atual_valida, verify_password
 from agentes import LATEST_AGENT_VERSION, comparar_versao_agent
 from util import hash_token, normalizar_servidor
 from util import agora_sql, enriquecer_uptime_pfsense, formatar_idade, parse_data
@@ -77,206 +63,10 @@ from pfsense_web import bp as pfsense_blueprint
 app.register_blueprint(pfsense_blueprint)
 from api_agentes import bp as api_agentes_blueprint
 app.register_blueprint(api_agentes_blueprint)
-SESSION_IDLE_HOURS = int(os.getenv("SESSION_IDLE_HOURS", "8"))
 
 # =========================
 # HELPERS
 # =========================
-
-
-def limpar_sessoes_expiradas(db):
-    limite = (datetime.now() - timedelta(hours=SESSION_IDLE_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
-    db.execute("""
-        UPDATE user_sessions
-        SET ativo=0,
-            logged_out_at=COALESCE(logged_out_at, ?)
-        WHERE ativo=1
-          AND (last_seen IS NULL OR datetime(last_seen) < datetime(?))
-    """, (agora_sql(), limite))
-
-
-def sessao_atual_valida(db):
-    user_id = session.get("user_id")
-    session_id = session.get("session_id")
-    if not user_id or not session_id:
-        return False
-
-    limpar_sessoes_expiradas(db)
-    row = db.execute("""
-        SELECT us.id
-        FROM user_sessions us
-        JOIN usuarios u ON u.id = us.user_id
-        WHERE us.session_id=?
-          AND us.user_id=?
-          AND us.ativo=1
-          AND u.ativo=1
-        LIMIT 1
-    """, (session_id, user_id)).fetchone()
-    if not row:
-        db.commit()
-        return False
-
-    db.execute("""
-        UPDATE user_sessions
-        SET last_seen=?
-        WHERE session_id=?
-    """, (agora_sql(), session_id))
-    db.commit()
-    return True
-
-
-def criar_sessao_usuario(db, user):
-    session_id = secrets.token_urlsafe(32)
-    session.clear()
-    session["session_id"] = session_id
-    session["user_id"] = user["id"]
-    session["username"] = user["username"]
-    session["tipo"] = user["tipo"]
-    db.execute("""
-        INSERT INTO user_sessions (
-            session_id, user_id, username, ip, user_agent, created_at, last_seen, ativo
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    """, (
-        session_id,
-        user["id"],
-        user["username"],
-        request.headers.get("X-Forwarded-For", request.remote_addr or "")[:120],
-        (request.headers.get("User-Agent") or "")[:300],
-        agora_sql(),
-        agora_sql(),
-    ))
-    db.commit()
-
-
-def retention_config(db):
-    config = db.execute("SELECT * FROM retention_config WHERE id=1").fetchone()
-    if config:
-        return config
-
-    db.execute("""
-        INSERT OR IGNORE INTO retention_config (
-            id, logs_full_days, unknown_logs_days, worker_runs_days,
-            zammad_alerts_days, heartbeat_history_days, session_history_days, auto_enabled, updated_at
-        )
-        VALUES (1, 90, 30, 180, 180, 90, 30, 1, ?)
-    """, (agora_sql(),))
-    db.commit()
-    return db.execute("SELECT * FROM retention_config WHERE id=1").fetchone()
-
-
-def executar_retencao(manual=False):
-    db = get_db()
-    config = retention_config(db)
-    run_id = None
-    backup_path = None
-    try:
-        cur = db.execute("""
-            INSERT INTO maintenance_runs (action, started_at, status, detail)
-            VALUES ('retention', ?, 'running', ?)
-        """, (agora_sql(), "manual" if manual else "auto"))
-        run_id = cur.lastrowid
-        db.commit()
-
-        if USING_POSTGRES:
-            backup_path = "postgres"
-        else:
-            backup_dir = DB_PATH.parent
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            backup_path = backup_dir / f"backups-retention-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
-        if not USING_POSTGRES and DB_PATH.exists():
-            shutil.copy2(DB_PATH, backup_path)
-
-        logs_limite = (datetime.now() - timedelta(days=int(config["logs_full_days"] or 90))).strftime("%Y-%m-%d %H:%M:%S")
-        unknown_limite = (datetime.now() - timedelta(days=int(config["unknown_logs_days"] or 30))).strftime("%Y-%m-%d %H:%M:%S")
-        worker_limite = (datetime.now() - timedelta(days=int(config["worker_runs_days"] or 180))).strftime("%Y-%m-%d %H:%M:%S")
-        zammad_limite = (datetime.now() - timedelta(days=int(config["zammad_alerts_days"] or 180))).strftime("%Y-%m-%d %H:%M:%S")
-        heartbeat_limite = (datetime.now() - timedelta(days=int(config["heartbeat_history_days"] or 90))).strftime("%Y-%m-%d %H:%M:%S")
-        session_limite = (datetime.now() - timedelta(days=int(config["session_history_days"] or 30))).strftime("%Y-%m-%d %H:%M:%S")
-
-        stats = {}
-        cur = db.execute("""
-            UPDATE logs_email
-            SET conteudo_raw=NULL
-            WHERE conteudo_raw IS NOT NULL
-              AND datetime(data_email) < datetime(?)
-        """, (logs_limite,))
-        stats["logs_compactados"] = cur.rowcount
-
-        cur = db.execute("""
-            DELETE FROM logs_nao_cadastrados
-            WHERE datetime(COALESCE(created_at, data_email)) < datetime(?)
-        """, (unknown_limite,))
-        stats["nao_cadastrados_removidos"] = cur.rowcount
-
-        cur = db.execute("""
-            DELETE FROM worker_runs
-            WHERE datetime(started_at) < datetime(?)
-        """, (worker_limite,))
-        stats["worker_runs_removidos"] = cur.rowcount
-
-        cur = db.execute("""
-            DELETE FROM zammad_alertas
-            WHERE datetime(COALESCE(updated_at, created_at)) < datetime(?)
-        """, (zammad_limite,))
-        stats["zammad_alertas_removidos"] = cur.rowcount
-
-        cur = db.execute("""
-            DELETE FROM agent_heartbeat_history
-            WHERE datetime(seen_at) < datetime(?)
-        """, (heartbeat_limite,))
-        stats["heartbeat_history_removidos"] = cur.rowcount
-
-        cur = db.execute("""
-            DELETE FROM user_sessions
-            WHERE ativo=0
-              AND datetime(COALESCE(logged_out_at, last_seen, created_at)) < datetime(?)
-        """, (session_limite,))
-        stats["sessoes_removidas"] = cur.rowcount
-
-        detalhe = json.dumps({**stats, "backup": str(backup_path)}, ensure_ascii=False)
-        db.execute("""
-            UPDATE maintenance_runs
-            SET finished_at=?, status='success', detail=?
-            WHERE id=?
-        """, (agora_sql(), detalhe, run_id))
-        db.commit()
-        db.execute("VACUUM")
-        db.close()
-        return stats, str(backup_path)
-    except Exception as exc:
-        if run_id:
-            db.execute("""
-                UPDATE maintenance_runs
-                SET finished_at=?, status='error', detail=?
-                WHERE id=?
-            """, (agora_sql(), str(exc), run_id))
-            db.commit()
-        db.close()
-        raise
-
-
-def talvez_executar_retencao_automatica():
-    db = get_db()
-    try:
-        config = retention_config(db)
-        if not int(config["auto_enabled"] or 0):
-            return
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        ja_rodou = db.execute("""
-            SELECT 1
-            FROM maintenance_runs
-            WHERE action='retention'
-              AND status IN ('success', 'running')
-              AND date(started_at)=date(?)
-            LIMIT 1
-        """, (hoje,)).fetchone()
-        if ja_rodou:
-            return
-    finally:
-        db.close()
-
-    executar_retencao(manual=False)
 
 
 @app.before_request
