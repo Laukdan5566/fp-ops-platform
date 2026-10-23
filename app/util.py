@@ -1,6 +1,8 @@
 """Funcoes puras de data/hora e formatacao usadas pelo painel e pelos modulos de rotas."""
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+import hashlib
+import re
 
 
 def parse_data(valor):
@@ -64,3 +66,15 @@ def enriquecer_uptime_pfsense(metrics, checked_at=None):
         result["BOOT_AT"] = None
     result["RECENT_REBOOT"] = uptime_seconds < 24 * 60 * 60
     return result
+
+
+def hash_token(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def hash_conteudo(texto):
+    return hashlib.sha256((texto or "").encode()).hexdigest()
+
+
+def normalizar_servidor(nome):
+    return re.sub(r"\s+", "_", (nome or "").strip().upper())

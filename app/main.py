@@ -87,6 +87,7 @@ def verify_password(stored_hash, password):
 
 init_db()
 from auth import admin_required, login_required, support_required
+from util import hash_conteudo, hash_token, normalizar_servidor
 from util import agora_sql, enriquecer_uptime_pfsense, formatar_idade, parse_data
 from helpdesk import bp as helpdesk_blueprint
 app.register_blueprint(helpdesk_blueprint)
@@ -97,17 +98,6 @@ SESSION_IDLE_HOURS = int(os.getenv("SESSION_IDLE_HOURS", "8"))
 # =========================
 # HELPERS
 # =========================
-
-def hash_token(token):
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
-def hash_conteudo(texto):
-    return hashlib.sha256((texto or "").encode()).hexdigest()
-
-
-def normalizar_servidor(nome):
-    return re.sub(r"\s+", "_", (nome or "").strip().upper())
 
 
 def detectar_status_log(texto):
