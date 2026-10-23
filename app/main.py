@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 import zipfile
-from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -91,40 +90,14 @@ def verify_password(stored_hash, password):
         return False, False
 
 init_db()
+from auth import admin_required, login_required, support_required
 from helpdesk import bp as helpdesk_blueprint
 app.register_blueprint(helpdesk_blueprint)
 SESSION_IDLE_HOURS = int(os.getenv("SESSION_IDLE_HOURS", "8"))
 
 # =========================
-# DECORATORS
+# HELPERS
 # =========================
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if "user_id" not in session:
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if session.get("tipo") != "admin":
-            return "Acesso negado", 403
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-def support_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if session.get("tipo") not in ("admin", "operador"):
-            return "Acesso negado", 403
-        return f(*args, **kwargs)
-    return decorated_function
-
 
 def hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()

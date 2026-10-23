@@ -3,11 +3,11 @@ import json
 import re
 import secrets
 from datetime import datetime
-from functools import wraps
 from urllib.parse import urlparse
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
 
+from auth import admin_required, login_required
 from db import get_db
 from secret_store import encrypt_secret
 
@@ -21,24 +21,6 @@ VALID_CATEGORIES = {"backup", "server", "pfsense", "internet", "windows", "suppo
 
 def now_sql():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if "user_id" not in session:
-            return redirect("/login")
-        return view(*args, **kwargs)
-    return wrapped
-
-
-def admin_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if session.get("tipo") != "admin":
-            abort(403)
-        return view(*args, **kwargs)
-    return wrapped
 
 
 def csrf_token():
