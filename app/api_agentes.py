@@ -5,7 +5,23 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
-from agentes import AGENT_SETUP_URL, AGENT_SETUP_URL_WS2012, AGENT_UPDATE_URL, AGENT_UPDATE_URL_WS2012, LATEST_AGENT_VERSION, agent_package_sha256, api_key_autorizada_para_servidor, autenticar_api_key, comparar_versao_agent, detectar_status_log, extrair_api_token, garantir_servidor_recuperado, ler_json_tolerante, normalizar_data_evento_windows, recuperar_agent_api_key
+from agentes import (
+    AGENT_SETUP_URL,
+    AGENT_SETUP_URL_WS2012,
+    AGENT_UPDATE_URL,
+    AGENT_UPDATE_URL_WS2012,
+    LATEST_AGENT_VERSION,
+    agent_package_sha256,
+    api_key_autorizada_para_servidor,
+    autenticar_api_key,
+    comparar_versao_agent,
+    detectar_status_log,
+    extrair_api_token,
+    garantir_servidor_recuperado,
+    ler_json_tolerante,
+    normalizar_data_evento_windows,
+    recuperar_agent_api_key,
+)
 from db import get_db
 from util import hash_conteudo, normalizar_servidor
 
