@@ -397,7 +397,8 @@
         <a class="submenu-link {% if request.path.startswith('/email-config') %}active{% endif %}" href="/email-config">E-mail</a>
         <a class="submenu-link {% if request.path.startswith('/zammad-config') %}active{% endif %}" href="/zammad-config">Zammad (legado)</a>
         <a class="submenu-link {% if request.path.startswith('/api-keys') %}active{% endif %}" href="/api-keys">Agents e chaves</a>
-        <a class="submenu-link {% if request.path.startswith('/admin') %}active{% endif %}" href="/admin">Usuários e retenção</a>
+        <a class="submenu-link {% if request.path.startswith('/admin') and not request.path.startswith('/admin/retencao') %}active{% endif %}" href="/admin">Usuários e retenção</a>
+        <a class="submenu-link {% if request.path.startswith('/admin/retencao') %}active{% endif %}" href="/admin/retencao">Retenção (resumo)</a>
     </details>
     {% endif %}
     </nav>

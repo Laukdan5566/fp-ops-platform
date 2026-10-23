@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Retenção</h1>
+        <div class="page-subtitle">Quanto tempo cada tipo de dado é guardado e quando a limpeza rodou pela última vez.</div>
+    </div>
+</div>
+
+<div class="ops-panel p-3 mb-4">
+    <h5>Logs e histórico do banco</h5>
+    <p class="text-muted small mb-2">Limpeza {{ "automática (1x por dia)" if config.auto_enabled else "automática desligada" }}.
+        {% if ultima_execucao %}Última execução: {{ ultima_execucao.started_at | br_datetime }} — {{ ultima_execucao.status }}.{% else %}Ainda não executou.{% endif %}
+        Edite em <a href="/admin">Usuários e retenção</a>.</p>
+    <table class="table table-sm mb-0">
+        <thead><tr><th>Dado</th><th>Guardado por</th></tr></thead>
+        <tbody>
+        {% for rotulo, dias in regras_logs %}
+            <tr><td>{{ rotulo }}</td><td>{{ dias }} dias</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="ops-panel p-3 mb-4">
+    <h5>Backups de firewall no servidor (disco)</h5>
+    <p class="text-muted small mb-2">Cada firewall tem seu prazo. O backup mais recente nunca é apagado, mesmo acima do prazo (firewall fora do ar). Edite na tela de cada firewall.</p>
+    <table class="table table-sm mb-0">
+        <thead><tr><th>Firewall</th><th>Guardado por</th><th>Backups</th><th>Mais antigo</th><th>Mais novo</th></tr></thead>
+        <tbody>
+        {% for f in firewalls %}
+            <tr>
+                <td><a href="/pfsense/{{ f.id }}">{{ f.name }}</a></td>
+                <td>{{ f.backup_retention_days or 30 }} dias</td>
+                <td>{{ f.total }}</td>
+                <td>{{ f.mais_antigo | br_datetime if f.mais_antigo else "-" }}</td>
+                <td>{{ f.mais_novo | br_datetime if f.mais_novo else "-" }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="5" class="text-muted">Nenhum firewall ativo.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="ops-panel p-3 mb-4">
+    <h5>Backups de firewall no FTP</h5>
+    {% if storage and storage.active %}
+        <p class="mb-1">Pasta <code>{{ storage.remote_dir }}</code> em {{ storage.host }}.
+            {% if storage.retention_enabled %}Guardados por <strong>{{ storage.retention_days }} dias</strong>.{% else %}Limpeza desligada.{% endif %}</p>
+        <p class="text-muted small mb-0">
+            {% if storage.last_cleanup_at %}Última limpeza: {{ storage.last_cleanup_at | br_datetime }} — {{ storage.last_cleanup_status }},
+                {{ storage.last_cleanup_deleted or 0 }} apagado(s).{% else %}Ainda não limpou.{% endif %}
+            Só apaga arquivos com o nome gerado por este monitor; o restante do FTP não é tocado. Edite em <a href="/pfsense/storage">Storage pfSense / FTP</a>.</p>
+    {% else %}
+        <p class="text-muted mb-0">Armazenamento FTP não configurado.</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -174,6 +174,41 @@ def admin_run_retention():
     return redirect("/admin")
 
 
+@bp.route("/admin/retencao")
+@login_required
+@admin_required
+def retencao_resumo():
+    """Visao unica das regras de retencao: logs do banco, backups de firewall (disco) e FTP. Edicao fica nas telas de origem."""
+    db = get_db()
+    try:
+        config = retention_config(db)
+        ultima_execucao = db.execute("""
+            SELECT started_at, finished_at, status, detail FROM maintenance_runs
+            WHERE action='retention' ORDER BY id DESC LIMIT 1
+        """).fetchone()
+        firewalls = db.execute("""
+            SELECT f.id, f.name, f.backup_retention_days, COUNT(b.id) AS total,
+                   MIN(b.created_at) AS mais_antigo, MAX(b.created_at) AS mais_novo
+            FROM pfsense_firewalls f LEFT JOIN pfsense_backups b ON b.firewall_id=f.id
+            WHERE f.active=1 GROUP BY f.id, f.name, f.backup_retention_days ORDER BY f.name
+        """).fetchall()
+        storage = db.execute("SELECT * FROM pfsense_storage WHERE id=1").fetchone()
+    finally:
+        db.close()
+    regras_logs = [
+        ("Logs de backup (conteudo completo)", config["logs_full_days"]),
+        ("Logs de servidores nao cadastrados", config["unknown_logs_days"]),
+        ("Historico do worker", config["worker_runs_days"]),
+        ("Alertas do Zammad", config["zammad_alerts_days"]),
+        ("Historico de batimentos dos agentes", config["heartbeat_history_days"]),
+        ("Sessoes encerradas", config["session_history_days"]),
+    ]
+    return render_template(
+        "retencao_resumo.html", config=config, regras_logs=regras_logs, ultima_execucao=ultima_execucao,
+        firewalls=firewalls, storage=storage,
+    )
+
+
 @bp.route("/zammad-config")
 @login_required
 @admin_required

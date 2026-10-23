@@ -1,5 +1,6 @@
 GET /
 GET /admin
+GET /admin/retencao
 GET /api-keys
 GET /api-keys/config/cliente/<int:cliente_id>
 GET /backups
