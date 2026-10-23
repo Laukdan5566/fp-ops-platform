@@ -25,6 +25,7 @@ from agentes import (
 from db import get_db
 from util import hash_conteudo, normalizar_servidor
 
+
 bp = Blueprint("api_agentes", __name__)
 
 

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from db import DB_PATH, USING_POSTGRES, get_db
 from util import agora_sql
 
+
 def retention_config(db):
     config = db.execute("SELECT * FROM retention_config WHERE id=1").fetchone()
     if config:

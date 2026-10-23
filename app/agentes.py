@@ -11,6 +11,7 @@ from flask import request
 from db import get_db
 from util import agora_sql, hash_token, normalizar_servidor
 
+
 LATEST_AGENT_VERSION = "1.3.1"
 AGENT_UPDATE_URL = "https://bkp.fpinformatica.com.br/static/backup-monitor-agent.zip"
 AGENT_UPDATE_URL_WS2012 = "https://bkp.fpinformatica.com.br/static/backup-monitor-agent-legacy-ws2012.zip"

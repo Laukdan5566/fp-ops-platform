@@ -10,9 +10,15 @@ from flask import Blueprint, Response, redirect, render_template, request, send_
 
 from auth import admin_required, login_required
 from db import get_db
-from pfsense_storage import cleanup_storage, normalize_remote_dir, test_storage_connection, upload_backup_from_db
+from pfsense_storage import (
+    cleanup_storage,
+    normalize_remote_dir,
+    test_storage_connection,
+    upload_backup_from_db,
+)
 from secret_store import decrypt_backup, encrypt_secret
 from util import agora_sql, enriquecer_uptime_pfsense
+
 
 bp = Blueprint("pfsense_web", __name__)
 

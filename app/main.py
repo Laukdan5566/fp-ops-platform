@@ -11,6 +11,7 @@ from flask import Flask, Response, redirect, render_template, request, session
 
 from db import get_db, init_db
 
+
 app = Flask(__name__)
 secret_key = os.getenv("SECRET_KEY", "").strip()
 if not secret_key:
