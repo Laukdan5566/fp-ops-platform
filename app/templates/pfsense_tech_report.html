@@ -97,6 +97,7 @@ td.num,th.num{text-align:right}
   </div>
 </div>
 <div class="kpis">{% for k in r.kpis %}<div class="kpi"><b>{{ k.valor }}</b><span>{{ k.texto }}</span></div>{% endfor %}</div>
+{% if r.dados.observacoes %}<div class="termos"><h5>Observações do técnico</h5>{% for o in r.dados.observacoes %}<div>{{ o }}</div>{% endfor %}</div>{% endif %}
 
 <h2><span class="n">2</span>Como a internet da empresa está montada</h2>
 {{ diagrama|safe }}

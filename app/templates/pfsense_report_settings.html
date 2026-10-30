@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1">Ajustes do relatório de internet — {{ firewall.name }}</h2>
+        <div class="text-muted">Informações que o firewall não sabe dizer sozinho. Valem para os próximos relatórios (os já guardados não mudam).</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}/relatorios">Relatórios</a>
+        <a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}">Voltar</a>
+    </div>
+</div>
+
+{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}
+{% if salvo %}<div class="alert alert-success">Ajustes salvos. Abra o relatório para ver o efeito: <a href="/pfsense/{{ firewall.id }}/relatorio-tecnico?days=7" target="_blank">relatório dos últimos 7 dias</a>.</div>{% endif %}
+
+<form method="post" action="/pfsense/{{ firewall.id }}/relatorio/ajustes">
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+    <h5 class="card-title">Horário de expediente</h5>
+    <p class="text-muted mb-2">Usado para dizer quais oscilações aconteceram durante o trabalho (segunda a sexta) e para o uso médio no expediente.</p>
+    <div class="d-flex align-items-center gap-2">
+        <input name="expediente_inicio" type="number" min="0" max="23" class="form-control" style="max-width:90px" value="{{ inicio }}" required>
+        <span>h até</span>
+        <input name="expediente_fim" type="number" min="1" max="24" class="form-control" style="max-width:90px" value="{{ fim }}" required>
+        <span>h</span>
+    </div>
+</div></div>
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+    <h5 class="card-title">Qual link é o principal?</h5>
+    <p class="text-muted mb-2">O principal é o link <b>padrão da empresa</b>. Se o failover estiver usando outro como preferencial (ajuste temporário), o relatório avisa. Em "Automático", o preferencial do firewall é tratado como principal.</p>
+    {% if links %}
+    <table class="table align-middle mb-0"><thead><tr><th>Link</th><th>Operadora</th><th>Preferencial no firewall hoje</th><th style="width:220px">Papel no relatório</th></tr></thead><tbody>
+    {% for l in links %}
+    <tr>
+        <td><b>{{ l.name }}</b></td><td>{{ l.provider }}</td>
+        <td>{% if l.preferred %}<span class="badge text-bg-primary">Sim</span>{% else %}<span class="text-muted">Não</span>{% endif %}</td>
+        <td><select name="role_{{ l.id }}" class="form-select"><option value="">Automático</option><option value="principal" {{ 'selected' if l.role == 'principal' }}>Principal (padrão da empresa)</option><option value="reserva" {{ 'selected' if l.role == 'reserva' }}>Reserva</option></select></td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<div class="text-muted">Nenhum link ativo. Use "Descobrir WANs" na tela do firewall.</div>{% endif %}
+</div></div>
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+    <h5 class="card-title">Redes internas</h5>
+    <p class="text-muted mb-2">O FP Ops lê as redes e VLANs do firewall. Ajuste o nome que aparece no relatório e diga quais são Wi-Fi.</p>
+    {% if redes %}
+    <table class="table align-middle mb-0"><thead><tr><th>Nome no relatório</th><th>Rede</th><th style="width:170px">Tipo</th><th style="width:120px">No relatório</th></tr></thead><tbody>
+    {% for r in redes %}
+    <tr>
+        <td><input name="rede_nome_{{ r.id }}" class="form-control" maxlength="80" required value="{{ r.name }}"></td>
+        <td class="text-muted small"><span class="font-monospace">{{ r.interface_key }}</span>{% if r.vlan %} · VLAN {{ r.vlan }}{% endif %}{% if r.cidr %} · {{ r.cidr }}{% endif %}</td>
+        <td><select name="rede_tipo_{{ r.id }}" class="form-select">{% for chave, rotulo in tipos.items() %}<option value="{{ chave }}" {{ 'selected' if r.kind == chave }}>{{ rotulo }}</option>{% endfor %}</select></td>
+        <td><div class="form-check"><input class="form-check-input" type="checkbox" name="rede_incluir_{{ r.id }}" id="inc{{ r.id }}" {{ 'checked' if r.include_in_report }}><label class="form-check-label" for="inc{{ r.id }}">Incluir</label></div></td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<div class="text-muted">As redes aparecem aqui depois da primeira leitura do firewall (acontece sozinha, de hora em hora).</div>{% endif %}
+</div></div>
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+    <h5 class="card-title">Observações para o relatório</h5>
+    <p class="text-muted mb-2">Aparece no relatório como "Observações do técnico". Use para o que só você sabe, como "NWT com upload baixo desde a instalação; chamado aberto". Uma observação por linha.</p>
+    <textarea name="report_notes" rows="4" maxlength="1500" class="form-control">{{ firewall.report_notes or '' }}</textarea>
+</div></div>
+
+<div class="d-flex gap-2"><button class="btn btn-primary">Salvar ajustes</button><a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}">Cancelar</a></div>
+</form>
+{% endblock %}

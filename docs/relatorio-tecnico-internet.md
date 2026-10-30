@@ -21,6 +21,10 @@ O FP Ops passou a gerar sozinho, para cada firewall pfSense com links cadastrado
 - **Link principal × preferencial**: o preferencial é o de menor tier do grupo de failover (lido do `config.xml`). O principal "no padrão da empresa" é o campo `pfsense_links.role` (`principal`/`reserva`); sem ele, o preferencial é tratado como principal. Quando o operador marca outro como principal, aparece o diagnóstico "link preferencial fora do padrão".
 - **Download de cada rede**: saída da interface interna (o que o firewall entregou para ela).
 
+## Ajustes (tela)
+
+Na tela do firewall, botão **Ajustes do relatório** (só administrador): horário de expediente, qual link é o principal (padrão da empresa), nome/tipo (cabeada, Wi-Fi, VPN) e inclusão de cada rede, e observações do técnico (aparecem no relatório). Valores inválidos não gravam nada. Vale para os próximos relatórios; os guardados não mudam.
+
 ## Ainda NÃO validado num firewall real
 
 Tudo abaixo foi escrito pelo formato documentado do pfSense e testado só com amostras (`tests/test_pfsense_telemetry.py`). Conferir num firewall real (somente leitura) antes de confiar nos números:
@@ -32,7 +36,6 @@ Tudo abaixo foi escrito pelo formato documentado do pfSense e testado só com am
 
 ## Próximos passos
 
-- **Telas de ajuste**: hoje `role` do link, nome/tipo das redes (cabeada/Wi-Fi), expediente (`report_expediente`, padrão 8-18) e observações (`report_notes`) só mudam direto no banco. Falta o formulário.
 - **PDF no servidor** (a imagem não tem biblioteca de PDF): hoje o PDF sai pelo navegador ("Imprimir / salvar PDF"). Ideal: WeasyPrint na imagem, testado em build separado.
 - **Envio**: avisar por e-mail/WhatsApp quando o relatório semanal sai, com link.
 - **DHCP e Wi-Fi**: ocupação da faixa DHCP e latência de aparelhos no Wi-Fi (o relatório da MK tinha; já há regra em `relatorio_tecnico.py`, falta coletar).

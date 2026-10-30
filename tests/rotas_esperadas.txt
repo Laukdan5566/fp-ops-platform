@@ -45,6 +45,7 @@ GET /tempo-online/relatorio
 GET /windows-events
 GET /zammad-config
 GET,POST /login
+GET,POST /pfsense/<int:firewall_id>/relatorio/ajustes
 GET,POST /pfsense/storage
 POST /admin/retention/run
 POST /admin/retention/save
