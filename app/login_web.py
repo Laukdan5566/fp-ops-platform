@@ -2,6 +2,7 @@
 from flask import Blueprint, redirect, render_template, request, session
 
 from db import get_db
+from login_limite import ip_do_cliente, limpar_falhas_do_usuario, mensagem_bloqueio, registrar_falha, segundos_bloqueado
 from sessao import criar_sessao_usuario, hash_password, limpar_sessoes_expiradas, verify_password
 from util import agora_sql
 
@@ -16,6 +17,11 @@ def login():
         username = request.form["username"].strip()
         senha = request.form["senha"]
         db = get_db()
+        ip = ip_do_cliente(request)
+        espera = segundos_bloqueado(db, username, ip)
+        if espera:  # bloqueado: nem confere a senha (e nao conta como nova falha, para o bloqueio nao se estender sozinho)
+            db.close()
+            return render_template("login.html", erro=mensagem_bloqueio(espera)), 429
         limpar_sessoes_expiradas(db)
         user = db.execute("""
             SELECT * FROM usuarios
@@ -48,10 +54,12 @@ def login():
                     erro=f"Limite de {max_sessoes} login(s) simultaneo(s) atingido para este usuario.",
                 )
 
+            limpar_falhas_do_usuario(db, username)
             criar_sessao_usuario(db, user)
             db.close()
             return redirect("/dashboard")
 
+        registrar_falha(db, username, ip)
         db.close()
         return render_template("login.html", erro="Usuario ou senha invalidos")
 

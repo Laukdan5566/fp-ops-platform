@@ -23,10 +23,24 @@ from agentes import (
     recuperar_agent_api_key,
 )
 from db import get_db
-from util import hash_conteudo, normalizar_servidor
+from util import hash_conteudo, normalizar_servidor, parse_data
 
 
 bp = Blueprint("api_agentes", __name__)
+
+# O agente avisa a cada ~45 s, mas o calculo de tempo online conta no maximo 10 min por sinal (monitoramento.calcular_uptime_por_eventos):
+# guardar 1 sinal a cada 4 min (ou quando o status muda) da o mesmo resultado com ~6x menos linhas.
+HISTORICO_INTERVALO_MIN_S = 240
+
+
+def historico_precisa_de_linha(db, servidor, status, agora_texto):
+    ultimo = db.execute(
+        "SELECT status, seen_at FROM agent_heartbeat_history WHERE servidor_log=? ORDER BY seen_at DESC LIMIT 1", (servidor,),
+    ).fetchone()
+    if not ultimo or ultimo["status"] != status:
+        return True
+    anterior, atual = parse_data(ultimo["seen_at"]), parse_data(agora_texto)
+    return not anterior or not atual or (atual - anterior).total_seconds() >= HISTORICO_INTERVALO_MIN_S
 
 
 @bp.route("/api/logs/ingest", methods=["POST"])
@@ -298,22 +312,24 @@ def agent_heartbeat():
         agora,
         agora,
     ))
-    db.execute("""
-        INSERT INTO agent_heartbeat_history (
-            servidor_log, api_key_id, hostname, ip_local, agent_version,
-            status, detalhe, seen_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        servidor,
-        key["id"],
-        (payload.get("hostname") or "")[:120],
-        (payload.get("ip_local") or "")[:80],
-        (payload.get("agent_version") or "")[:40],
-        (payload.get("status") or "online")[:30],
-        (payload.get("detalhe") or "")[:500],
-        agora,
-    ))
+    status = (payload.get("status") or "online")[:30]
+    if historico_precisa_de_linha(db, servidor, status, agora):
+        db.execute("""
+            INSERT INTO agent_heartbeat_history (
+                servidor_log, api_key_id, hostname, ip_local, agent_version,
+                status, detalhe, seen_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            servidor,
+            key["id"],
+            (payload.get("hostname") or "")[:120],
+            (payload.get("ip_local") or "")[:80],
+            (payload.get("agent_version") or "")[:40],
+            status,
+            (payload.get("detalhe") or "")[:500],
+            agora,
+        ))
     db.commit()
 
     return jsonify({

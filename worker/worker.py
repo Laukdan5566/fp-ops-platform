@@ -5,6 +5,7 @@ import imaplib
 import os
 import re
 import json
+import logging
 import shutil
 import sys
 import time
@@ -19,6 +20,7 @@ from email.utils import parsedate_to_datetime
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(os.path.dirname(__file__))
 from db import DB_PATH, USING_POSTGRES, get_db, init_db
+from agenda import Tarefa, iniciar, vigiar
 from zammad import avaliar_alertas
 from pfsense_agent import run_due_firewalls, run_requested_firewall_speedtests
 from pfsense_links import run_due_link_tests, run_requested_link_tests
@@ -529,39 +531,31 @@ def processar_emails():
         db.close()
 
 
-if __name__ == "__main__":
-    next_full_run = 0.0
-    next_helpdesk_reminder_run = 0.0
-    while True:
-        try:
-            if time.monotonic() >= next_full_run:
-                processar_emails()
-                run_due_firewalls()
-                run_due_link_tests()
-                try:  # leitura de trafego/logs para o relatorio tecnico: um erro aqui nao pode atrapalhar o restante
-                    run_due_telemetry()
-                except Exception as e:
-                    print("Telemetria pfSense:", e, flush=True)
-                try:  # relatorio tecnico da semana anterior, gerado sozinho na segunda-feira
-                    _db = get_db()
-                    try:
-                        run_due_weekly_reports(_db)
-                    finally:
-                        _db.close()
-                except Exception as e:
-                    print("Relatorio semanal pfSense:", e, flush=True)
-                run_storage_cleanup()
-                executar_retencao_automatica()
-                process_infrastructure_notifications()
-                next_full_run = time.monotonic() + IMAP_CHECK_INTERVAL
-            run_requested_firewall_speedtests()
-            run_requested_link_tests()
-            if time.monotonic() >= next_helpdesk_reminder_run:
-                queue_internal_reminders()
-                next_helpdesk_reminder_run = time.monotonic() + HELPDESK_REMINDER_CHECK_INTERVAL
-            process_notification_outbox()
-        except Exception as e:
-            print("Erro:", e, flush=True)
-            traceback.print_exc()
+def relatorios_semanais():
+    db = get_db()
+    try:
+        run_due_weekly_reports(db)
+    finally:
+        db.close()
 
-        time.sleep(min(5, IMAP_CHECK_INTERVAL))
+
+def montar_tarefas():
+    """Cada tarefa roda no seu proprio laco (ver agenda.py). O que usa SSH nos firewalls fica fora das tarefas de e-mail,
+    alertas e fila de mensagens, para um firewall lento nunca atrasar um aviso."""
+    return [
+        Tarefa("email", [("e-mails e Zammad", processar_emails)], IMAP_CHECK_INTERVAL),
+        Tarefa("firewalls", [("checagem", run_due_firewalls), ("links", run_due_link_tests)], IMAP_CHECK_INTERVAL),
+        Tarefa("pedidos-pfsense", [("speedtests pedidos", run_requested_firewall_speedtests), ("testes de link pedidos", run_requested_link_tests)], 5),
+        Tarefa("telemetria", [("trafego e logs", run_due_telemetry), ("relatorio semanal", relatorios_semanais)], IMAP_CHECK_INTERVAL),
+        Tarefa("manutencao", [("limpeza do FTP", run_storage_cleanup), ("retencao", executar_retencao_automatica)], IMAP_CHECK_INTERVAL),
+        Tarefa("alertas", [("alertas de infraestrutura", process_infrastructure_notifications)], IMAP_CHECK_INTERVAL),
+        Tarefa("lembretes", [("lembretes do helpdesk", queue_internal_reminders)], HELPDESK_REMINDER_CHECK_INTERVAL),
+        Tarefa("fila-whatsapp", [("fila de mensagens", process_notification_outbox)], 5),
+    ]
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(threadName)s: %(message)s", stream=sys.stdout)
+    tarefas = montar_tarefas()
+    _, parar = iniciar(tarefas)
+    vigiar(tarefas, parar)
