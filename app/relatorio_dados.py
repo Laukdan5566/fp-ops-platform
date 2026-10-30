@@ -64,7 +64,7 @@ def _links(db, firewall_id, ini_utc, fim_utc):
         ).fetchall()
         online = [s for s in sondas if s["status"] == "online"]
         links.append({
-            "id": link["id"], "nome": link["name"], "gateway": link["gateway_name"], "traffic_key": link["traffic_key"],
+            "id": link["id"], "nome": link["name"], "gateway": link["gateway_name"], "traffic_key": link["traffic_key"] or link["interface_key"],
             "role": link["role"], "preferred": bool(link["preferred"]),
             "down_mbps": _media([t["download_mbps"] for t in testes]), "up_mbps": _media([t["upload_mbps"] for t in testes]),
             "contratado_down_mbps": link["contracted_down_mbps"], "contratado_up_mbps": link["contracted_up_mbps"],

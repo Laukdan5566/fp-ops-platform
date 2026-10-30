@@ -31,7 +31,9 @@ GET /pfsense/<int:firewall_id>/internet-report
 GET /pfsense/<int:firewall_id>/links/<int:link_id>/edit
 GET /pfsense/<int:firewall_id>/links/new
 GET /pfsense/<int:firewall_id>/relatorio-tecnico
+GET /pfsense/<int:firewall_id>/relatorios
 GET /pfsense/new
+GET /pfsense/relatorio/<int:report_id>
 GET /search
 GET /servidor/<nome_log>
 GET /servidores/<int:cliente_id>

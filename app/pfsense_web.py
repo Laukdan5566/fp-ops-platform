@@ -695,6 +695,43 @@ def pfsense_relatorio_tecnico(firewall_id):
     return html
 
 
+@bp.route("/pfsense/<int:firewall_id>/relatorios")
+@login_required
+def pfsense_relatorios(firewall_id):
+    db = get_db()
+    firewall = db.execute("SELECT id, name FROM pfsense_firewalls WHERE id=?", (firewall_id,)).fetchone()
+    if not firewall:
+        db.close()
+        return "Firewall nao encontrado", 404
+    relatorios = []
+    for linha in db.execute(
+        "SELECT id, period_start, period_end, kind, generated_at, summary FROM pfsense_reports WHERE firewall_id=? ORDER BY period_start DESC, id DESC LIMIT 60",
+        (firewall_id,),
+    ).fetchall():
+        item = dict(linha)
+        try:
+            item["resumo"] = json.loads(item["summary"] or "{}")
+        except ValueError:
+            item["resumo"] = {}
+        relatorios.append(item)
+    db.close()
+    return render_template("pfsense_reports.html", firewall=firewall, relatorios=relatorios)
+
+
+@bp.route("/pfsense/relatorio/<int:report_id>")
+@login_required
+def pfsense_relatorio_guardado(report_id):
+    db = get_db()
+    linha = db.execute("SELECT firewall_id, period_start, html FROM pfsense_reports WHERE id=?", (report_id,)).fetchone()
+    db.close()
+    if not linha:
+        return "Relatorio nao encontrado", 404
+    resposta = Response(linha["html"], mimetype="text/html")
+    if request.args.get("download"):
+        resposta.headers["Content-Disposition"] = f'attachment; filename="relatorio-internet-{linha["firewall_id"]}-{str(linha["period_start"])[:10]}.html"'
+    return resposta
+
+
 @bp.route("/pfsense/<int:firewall_id>/edit")
 @login_required
 @admin_required

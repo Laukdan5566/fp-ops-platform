@@ -735,7 +735,9 @@ def init_db():
     add_column_if_missing(cur, "pfsense_links", "traffic_key", "TEXT")    # nome da interface no pfSense (ex.: wan, opt1) para ler o historico de trafego
     add_column_if_missing(cur, "pfsense_firewalls", "failover_info", "TEXT")  # JSON: grupos de gateway encontrados na ultima leitura
     add_column_if_missing(cur, "pfsense_firewalls", "report_expediente", "TEXT DEFAULT '8-18'")
-    add_column_if_missing(cur, "pfsense_firewalls", "report_notes", "TEXT")  # observacoes que o operador quer ver no relatorio
+    add_column_if_missing(cur, "pfsense_firewalls", "report_notes", "TEXT")
+    add_column_if_missing(cur, "pfsense_firewalls", "telemetry_at", "TEXT")      # ultima leitura de trafego/logs/config (UTC)
+    add_column_if_missing(cur, "pfsense_firewalls", "telemetry_error", "TEXT")  # observacoes que o operador quer ver no relatorio
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pfsense_networks (
