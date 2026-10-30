@@ -78,13 +78,31 @@ def agrupar_por_hora(linhas, entrada="inpass", saida="outpass"):
     return resultado
 
 
-def ler_trafego(client, interface, horas):
-    if not NOME_SEGURO.match(interface or ""):
-        return []
-    arquivo = f"/var/db/rrd/{interface}-traffic.rrd"
-    saida = run_shell(client, f"test -f {shlex.quote(arquivo)} && {RRDTOOL} fetch {shlex.quote(arquivo)} AVERAGE -r 3600 -s -{int(horas)}h || true", timeout=40)
-    _, linhas = parse_rrd_fetch(saida)
-    return agrupar_por_hora(linhas)
+def montar_script(interfaces, horas):
+    """UM unico script para o firewall inteiro: em firewall com o menu do pfSense como shell, cada comando abre uma sessao
+    interativa (varios segundos), entao rodar um por interface estoura o tempo."""
+    partes = ["echo '@@TZ'; date +%z"]
+    for interface in interfaces:
+        if not NOME_SEGURO.match(interface or ""):
+            continue
+        arquivo = shlex.quote(f"/var/db/rrd/{interface}-traffic.rrd")
+        partes.append(f"echo '@@RRD:{interface}'; test -f {arquivo} && {RRDTOOL} fetch {arquivo} AVERAGE -r 3600 -s -{int(horas)}h 2>/dev/null")
+    partes.append("echo '@@LOGINFO'; ls -la /var/log/gateways.log /var/log/system.log 2>&1")
+    partes.append("echo '@@LOG'; cat /var/log/gateways.log /var/log/system.log 2>/dev/null | grep -E 'dpinger|MONITOR:' | tail -n 8000")
+    partes.append("echo '@@FIM'; true")
+    return "\n".join(partes)
+
+
+def dividir_secoes(saida):
+    """Separa a saida do script nas secoes marcadas com '@@NOME' (RRD:<interface>, TZ, LOGINFO, LOG)."""
+    secoes, atual = {}, None
+    for linha in (saida or "").replace("\r", "").splitlines():
+        if linha.startswith("@@"):
+            atual = linha[2:].strip()
+            secoes[atual] = []
+        elif atual is not None:
+            secoes[atual].append(linha)
+    return {nome: "\n".join(linhas) for nome, linhas in secoes.items()}
 
 
 # ---------- leitura dos logs ----------
@@ -139,6 +157,20 @@ def parse_logs_gateway(texto, agora_utc, offset_min):
         chave = hashlib.sha1(f"{tipo}|{gateway}|{momento}|{perda}".encode()).hexdigest()[:24]
         eventos.append({"kind": tipo, "gateway": gateway, "event_at": momento, "loss": perda, "latency_ms": latencia, "key": chave})
     return eventos
+
+
+def diagnostico_log(secoes, eventos):
+    """Resumo pequeno do que o firewall devolveu, guardado para conferir o formato real dos logs sem acessar o firewall de novo."""
+    linhas = [l for l in secoes.get("LOG", "").splitlines() if l.strip()]
+    return {
+        "arquivos": secoes.get("LOGINFO", "")[:400],
+        "linhas_dpinger_monitor": len(linhas),
+        "alarmes_lidos": sum(1 for e in eventos if e["kind"] == "alarm"),
+        "eventos_lidos": len(eventos),
+        "amostra_dpinger": [l[:220] for l in linhas if "dpinger" in l][:2],
+        "amostra_monitor": [l[:220] for l in linhas if "MONITOR:" in l][:2],
+        "fuso": secoes.get("TZ", "").strip()[:10],
+    }
 
 
 # ---------- leitura da configuracao ----------
@@ -235,19 +267,23 @@ def coletar_firewall(firewall, agora_utc=None):
     client = connect_firewall(firewall)
     try:
         root = ET.fromstring(read_config(client))
-        offset = offset_minutos(run_shell(client, "date +%z", timeout=15))
         redes = descobrir_redes(root, chaves_wan)
         interfaces = sorted(chaves_wan | {r["interface_key"] for r in redes})
-        trafego = {i: ler_trafego(client, i, horas) for i in interfaces}
-        logs = run_shell(client, "cat /var/log/gateways.log /var/log/system.log 2>/dev/null | grep -E 'dpinger|MONITOR:' | tail -n 30000 || true", timeout=60)
+        saida = run_shell(client, montar_script(interfaces, horas), timeout=150)
     finally:
         client.close()
+    secoes = dividir_secoes(saida)
+    offset = offset_minutos(secoes.get("TZ", ""))
+    trafego = {i: agrupar_por_hora(parse_rrd_fetch(secoes.get(f"RRD:{i}", ""))[1]) for i in interfaces}
+    logs = secoes.get("LOG", "")
     info = info_failover(root)
     eventos = parse_logs_gateway(logs, agora, offset)
+    diagnostico = diagnostico_log(secoes, eventos)
     db = get_db()
     try:
         novos = gravar(db, firewall["id"], redes, info, gateways_preferenciais(info), trafego, eventos, agora.strftime("%Y-%m-%d %H:%M:%S"))
-        db.execute("UPDATE pfsense_firewalls SET telemetry_at=?, telemetry_error=NULL WHERE id=?", (agora.strftime("%Y-%m-%d %H:%M:%S"), firewall["id"]))
+        db.execute("UPDATE pfsense_firewalls SET telemetry_at=?, telemetry_error=NULL, telemetry_info=? WHERE id=?",
+                   (agora.strftime("%Y-%m-%d %H:%M:%S"), json.dumps(diagnostico, ensure_ascii=False), firewall["id"]))
         db.commit()
     finally:
         db.close()

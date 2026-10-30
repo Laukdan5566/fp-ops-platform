@@ -3,6 +3,7 @@ ATENCAO: as amostras abaixo seguem o formato documentado do pfSense/rrdtool/dpin
 contra um firewall real (ver docs/relatorio-tecnico-internet.md).
 Rodar: PYTHONPATH=app:worker python tests/test_pfsense_telemetry.py
 """
+import json
 import os
 import tempfile
 import xml.etree.ElementTree as ET
@@ -107,23 +108,21 @@ class ClienteFalso:
 
 def falso_run_shell(client, script, timeout=20):
     comandos.append(script)
-    if script.startswith("date"):
-        return "-0300"
-    if "rrdtool fetch" in script:
-        return amostra_rrd if "/wan-traffic.rrd" in script else ""
-    if "gateways.log" in script:
-        return log
-    raise AssertionError(script)
-
-
+    assert "@@TZ" in script, script  # so o script em lote e esperado
+    partes = ["@@TZ", "-0300"]
+    for interface in ("wan", "opt1", "lan", "opt2", "ipsec"):
+        if f"@@RRD:{interface}'" in script:
+            partes += [f"@@RRD:{interface}", amostra_rrd if interface == "wan" else ""]
+    partes += ["@@LOGINFO", "-rw-r--r--  1 root  wheel  81234 Oct 30 12:00 /var/log/gateways.log", "@@LOG", log, "@@FIM"]
+    return "\r\n".join(partes)  # o menu do pfSense devolve \r\n
 t.connect_firewall = lambda fw_: ClienteFalso()
 t.read_config = lambda client: ET.tostring(config)
 t.run_shell = falso_run_shell
 
 resumo = t.coletar_firewall(firewall, agora)
 assert resumo["eventos_novos"] == 7 and resumo["redes"] == 3 and resumo["interfaces"] == 5, resumo  # wan, opt1, lan, opt2, ipsec
-assert any("/var/db/rrd/ipsec-traffic.rrd" in c for c in comandos)
-assert all(" -s -240h" in c for c in comandos if "rrdtool" in c), comandos  # primeira coleta busca mais historico
+assert len(comandos) == 1, "deve usar UMA execucao so (firewall com shell de menu e lento por comando)"
+assert "/var/db/rrd/ipsec-traffic.rrd" in comandos[0] and " -s -240h" in comandos[0]  # primeira coleta busca mais historico
 
 db = get_db()
 assert db.execute("SELECT COUNT(*) c FROM pfsense_traffic_hourly WHERE interface_key='wan'").fetchone()["c"] == 2
@@ -131,13 +130,17 @@ assert db.execute("SELECT COUNT(*) c FROM pfsense_networks WHERE firewall_id=?",
 assert db.execute("SELECT preferred FROM pfsense_links WHERE gateway_name='WAN_NWT'").fetchone()["preferred"] == 1
 assert db.execute("SELECT preferred FROM pfsense_links WHERE gateway_name='WAN_EXOS'").fetchone()["preferred"] == 0
 assert db.execute("SELECT telemetry_error, telemetry_at FROM pfsense_firewalls WHERE id=?", (fw,)).fetchone()["telemetry_error"] is None
+info_gravada = json.loads(db.execute("SELECT telemetry_info FROM pfsense_firewalls WHERE id=?", (fw,)).fetchone()["telemetry_info"])
+assert info_gravada["eventos_lidos"] == 7 and info_gravada["alarmes_lidos"] == 3 and info_gravada["fuso"] == "-0300", info_gravada
+assert info_gravada["linhas_dpinger_monitor"] == 8 and "dpinger" in info_gravada["amostra_dpinger"][0] and "MONITOR:" in info_gravada["amostra_monitor"][0], info_gravada
+assert "gateways.log" in info_gravada["arquivos"]
 # o operador renomeia uma rede; a proxima coleta nao sobrescreve
 db.execute("UPDATE pfsense_networks SET name='Escritorio' WHERE interface_key='lan'")
 db.commit(); db.close()
 comandos.clear()
 resumo2 = t.coletar_firewall(firewall, agora)
 assert resumo2["eventos_novos"] == 0, resumo2  # eventos ja gravados nao duplicam
-assert all(" -s -12h" in c for c in comandos if "rrdtool" in c), comandos  # depois so revisa as ultimas horas
+assert len(comandos) == 1 and " -s -12h" in comandos[0], comandos  # depois so revisa as ultimas horas
 db = get_db()
 assert db.execute("SELECT name FROM pfsense_networks WHERE interface_key='lan'").fetchone()["name"] == "Escritorio"
 assert db.execute("SELECT COUNT(*) c FROM pfsense_traffic_hourly WHERE interface_key='wan'").fetchone()["c"] == 2  # upsert, sem duplicar
@@ -157,6 +160,11 @@ assert "timeout de teste" in db.execute("SELECT telemetry_error FROM pfsense_fir
 db.close()
 assert t.run_due_telemetry() == []  # acabou de tentar: espera o intervalo
 
-# nome de interface malicioso nao vira comando
-assert t.ler_trafego(object(), "wan; rm -rf /", 12) == []
+# nome de interface malicioso nao entra no script; secoes e fim de linha do menu sao tratados
+script = t.montar_script(["wan", "lan; rm -rf /", "opt 1", "opt2"], 12)
+assert "rm -rf" not in script and "@@RRD:wan'" in script and "@@RRD:opt2'" in script and "opt 1" not in script, script
+assert script.rstrip().endswith("true")  # o ultimo comando nunca falha, senao o agente acusa erro
+secoes = t.dividir_secoes("lixo antes\r\n@@TZ\r\n-0300\r\n@@RRD:wan\r\nlinha1\r\nlinha2\r\n@@FIM\r\n")
+assert secoes == {"TZ": "-0300", "RRD:wan": "linha1\nlinha2", "FIM": ""}, secoes
+assert t.dividir_secoes("") == {} and t.dividir_secoes(None) == {}
 print("OK: telemetria do pfSense (RRD, log de gateways, redes, failover e agendamento)")
