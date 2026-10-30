@@ -186,7 +186,7 @@ def _queda_de_energia(db, firewall_id, inicio, ini_utc, fim_utc):
     """Reinicios do firewall (uptime que volta atras) com uma lacuna longa antes: o firewall ficou fora de verdade."""
     ampla = brt_para_utc_texto(inicio - timedelta(days=1))
     linhas = db.execute(
-        "SELECT checked_at, metrics_json FROM pfsense_checks WHERE firewall_id=? AND status='success' "
+        "SELECT checked_at, metrics_json FROM pfsense_checks WHERE firewall_id=? AND status IN ('online', 'success') "
         "AND datetime(checked_at)>=datetime(?) AND datetime(checked_at)<=datetime(?) ORDER BY checked_at",
         (firewall_id, ampla, fim_utc),
     ).fetchall()
@@ -209,7 +209,7 @@ def _queda_de_energia(db, firewall_id, inicio, ini_utc, fim_utc):
 
 def _carga(db, firewall_id, ini_utc, fim_utc):
     linhas = db.execute(
-        "SELECT load1, cpu_count FROM pfsense_checks WHERE firewall_id=? AND status='success' AND load1 IS NOT NULL "
+        "SELECT load1, cpu_count FROM pfsense_checks WHERE firewall_id=? AND status IN ('online', 'success') AND load1 IS NOT NULL "
         "AND datetime(checked_at)>=datetime(?) AND datetime(checked_at)<=datetime(?)", (firewall_id, ini_utc, fim_utc),
     ).fetchall()
     cargas = [l["load1"] * 100 / (l["cpu_count"] or 1) for l in linhas]
@@ -227,6 +227,13 @@ def coletar_dados(db, firewall_id, inicio, fim, emitido_em=None):
     for link in links:
         if link["traffic_key"]:
             trafego[link["nome"]] = _serie_horaria(_trafego(db, firewall_id, link["traffic_key"], ini_utc, fim_utc), inicio, fim)
+    # link sem nenhuma medicao no periodo (ex.: cadastrado e nunca usado) nao entra: "estavel" sem dado seria mentira
+    com_dado = [l for l in links if l["down_mbps"] is not None or l["up_mbps"] is not None or l["latencia_ms"] is not None
+                or any(v is not None for _, v in trafego.get(l["nome"], []))]
+    if com_dado and len(com_dado) < len(links):
+        limitacoes.extend(f"O link {l['nome']} ficou fora do relatório: sem nenhuma medição no período." for l in links if l not in com_dado)
+        links = com_dado
+        trafego = {nome: serie for nome, serie in trafego.items() if nome in {l["nome"] for l in links}}
     if not trafego:
         limitacoes.append("Ainda não há histórico de tráfego deste firewall: os gráficos de uso aparecem quando a coleta começar.")
     eventos = _eventos_do_log(db, firewall_id, links, ini_utc, fim_utc)

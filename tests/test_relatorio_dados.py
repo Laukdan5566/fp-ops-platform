@@ -43,6 +43,9 @@ def novo_link(nome, gateway, chave, down, up, preferido, role=None):
 # NWT e o principal "no padrao da empresa" (role definido pelo operador); a EXOS esta como preferencial
 nwt = novo_link("NWT", "WAN_NWT", "wan", 90, 5, False, role="principal")
 exos = novo_link("EXOS", "WAN_EXOS", "opt1", 130, 135, True, role="reserva")
+# link cadastrado mas sem nenhuma medicao (como o NET do MK): nao pode aparecer como "estavel"
+db.execute("INSERT INTO pfsense_links (firewall_id, name, provider, interface_key, device_name, gateway_name, active, traffic_key) "
+           "VALUES (?, 'NET', 'NET', 'wan2', 'igb9', 'WAN_NET', 1, 'wan2')", (fw,))
 
 # trafego por hora (Mbps -> bps), vindo do mesmo gabarito
 for chave, nome in (("wan", "NWT"), ("opt1", "EXOS")):
@@ -86,15 +89,19 @@ hora = inicio
 while hora <= fim:
     if not (datetime(2026, 10, 27, 21, 17) <= hora < datetime(2026, 10, 28, 8, 5)):
         base = boot0 if hora < datetime(2026, 10, 27, 21, 17) else boot1
-        db.execute("INSERT INTO pfsense_checks (firewall_id, checked_at, status, load1, cpu_count, metrics_json) VALUES (?, ?, 'success', 0.3, 4, ?)",
+        db.execute("INSERT INTO pfsense_checks (firewall_id, checked_at, status, load1, cpu_count, metrics_json) VALUES (?, ?, 'online', 0.3, 4, ?)",  # 'online' e o status real das verificacoes em producao
                    (fw, utc(hora), json.dumps({"UPTIME_SECONDS": int((hora - base).total_seconds())})))
+    # durante a queda o monitor registra erro (sem uptime): nao pode atrapalhar a deteccao
+    if datetime(2026, 10, 27, 21, 17) <= hora < datetime(2026, 10, 28, 8, 5):
+        db.execute("INSERT INTO pfsense_checks (firewall_id, checked_at, status, error) VALUES (?, ?, 'error', 'timeout')", (fw, utc(hora)))
     hora += timedelta(minutes=5)
 db.commit()
 
 # ---------- do banco ao relatorio ----------
 dados = coletar_dados(db, fw, inicio, fim, emitido_em=mk["emitido_em"])
 assert dados["cliente"] == "MK" and dados["expediente"] == (8, 18)
-assert {l["nome"]: l["funcao"] for l in dados["links"]} == {"NWT": "principal", "EXOS": "reserva"}, dados["links"]
+assert {l["nome"]: l["funcao"] for l in dados["links"]} == {"NWT": "principal", "EXOS": "reserva"}, dados["links"]  # NET (sem medicao) ficou de fora
+assert any("NET ficou fora do relatório" in t for t in dados["limitacoes"]), dados["limitacoes"]
 assert [l["nome"] for l in dados["links"] if l["preferencial"]] == ["EXOS"]
 assert len(dados["sem_energia"]) == 1, dados["sem_energia"]
 queda_ini, queda_fim = dados["sem_energia"][0]
