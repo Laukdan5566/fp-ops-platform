@@ -773,6 +773,7 @@ def init_db():
         PRIMARY KEY (firewall_id, interface_key, bucket_start)
     )
     """)
+    add_column_if_missing(cur, "pfsense_traffic_hourly", "in_block_pps", "REAL")  # pacotes/s de entrada bloqueados pelo firewall (media da hora)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pfsense_gateway_events (

@@ -20,6 +20,7 @@ O FP Ops passou a gerar sozinho, para cada firewall pfSense com links cadastrado
 - **Failover**: o relatório só diz "funcionando" quando viu a troca no log (`MONITOR: ... omitting from routing group`). Sem essa prova, diz "Configurado".
 - **Link principal × preferencial**: o preferencial é o de menor tier do grupo de failover (lido do `config.xml`). O principal "no padrão da empresa" é o campo `pfsense_links.role` (`principal`/`reserva`); sem ele, o preferencial é tratado como principal. Quando o operador marca outro como principal, aparece o diagnóstico "link preferencial fora do padrão".
 - **Download de cada rede**: saída da interface interna (o que o firewall entregou para ela).
+- **Proteção (bloqueios)**: o coletor lê `/var/db/rrd/<interface>-packets.rrd` só dos links de internet (WAN), coluna `inblock` (+ `inblock6`), em pacotes/s, média por hora → `pfsense_traffic_hourly.in_block_pps`. O relatório soma `pps × 3600` por hora/dia/link e mostra a seção "Proteção: o que o firewall barrou" (só aparece quando o firewall entregou o dado). É contagem de **pacotes** de entrada bloqueados, não de conexões nem de atacantes distintos; o texto do relatório diz isso. Na primeira leitura de bloqueios busca 240 h de histórico; depois revisa as últimas 12 h. Informativo: não gera ação no plano.
 
 ## Ajustes (tela)
 
@@ -32,7 +33,8 @@ Tudo abaixo foi escrito pelo formato documentado do pfSense e testado só com am
 1. `ls /var/db/rrd | head -60` e `/usr/local/bin/rrdtool fetch /var/db/rrd/wan-traffic.rrd AVERAGE -r 3600 -s -6h` (colunas `inpass`/`outpass`; nomes dos arquivos por interface: `wan`, `lan`, `opt1`, `ipsec`).
 2. `grep -E 'dpinger|MONITOR:' /var/log/gateways.log | tail` e `grep MONITOR /var/log/system.log | tail` (em que arquivo cada linha aparece; formato da data: BSD ou ISO).
 3. `date +%z` (fuso do firewall) e o formato dos `<item>` de `gateway_group` no `config.xml` (`NOME|tier|endereço`).
-4. Rodar uma coleta e comparar tráfego e horários de oscilação com o painel do próprio pfSense (Status > Monitoring).
+4. `/usr/local/bin/rrdtool fetch /var/db/rrd/wan-packets.rrd AVERAGE -r 3600 -s -6h` (existe o arquivo? a coluna `inblock` tem valores plausíveis?) e comparar com Status > Monitoring > Packets > Block do pfSense.
+5. Rodar uma coleta e comparar tráfego e horários de oscilação com o painel do próprio pfSense (Status > Monitoring).
 
 ## Próximos passos
 

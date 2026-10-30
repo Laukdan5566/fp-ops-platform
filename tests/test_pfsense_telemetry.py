@@ -40,6 +40,18 @@ assert [h["bucket_start"] for h in horas] == ["2026-10-28 11:00:00", "2026-10-28
 assert horas[0]["in_avg_bps"] == 2e5 * 8 and horas[0]["out_avg_bps"] == 3e4 * 8 and horas[1]["in_avg_bps"] == 5e5 * 8, horas
 assert t.parse_rrd_fetch("") == ([], []) and t.parse_rrd_fetch("lixo sem formato")[1] == []
 
+# `-packets.rrd`: pacotes/s; so a ENTRADA bloqueada interessa (IPv4 + IPv6), media por hora
+amostra_pkt = f"""                          inpass            outpass            inblock           outblock          inblock6
+{h1 + 300}: 9.0e+02 8.0e+02 1.0000000000e+00 5.0e+00 -nan
+{h1 + 600}: 9.0e+02 8.0e+02 3.0000000000e+00 5.0e+00 1.0e+00
+{h1 + 900}: -nan -nan -nan -nan -nan
+{h2 + 3600}: 9.0e+02 8.0e+02 0.0000000000e+00 5.0e+00 -nan
+"""
+blocos = t.bloqueios_por_hora(t.parse_rrd_fetch(amostra_pkt)[1])
+# hora 11h: (1 + (3+1)) / 2 = 2,5 pacotes/s; o -nan nao conta como zero; hora 12h: zero real (firewall sem bloqueios)
+assert blocos == {"2026-10-28 11:00:00": 2.5, "2026-10-28 12:00:00": 0.0}, blocos
+assert t.bloqueios_por_hora([]) == {} and t.bloqueios_por_hora(t.parse_rrd_fetch("inpass\n1: -nan")[1]) == {}
+
 # ---------- log de gateways ----------
 agora = datetime(2026, 10, 30, 15, 30)
 log = """Oct 28 02:16:01 fw dpinger[12345]: WAN_EXOS 177.0.0.1: Alarm latency 15421us stddev 12000us loss 22%
@@ -113,6 +125,10 @@ def falso_run_shell(client, script, timeout=20):
     for interface in ("wan", "opt1", "lan", "opt2", "ipsec"):
         if f"@@RRD:{interface}'" in script:
             partes += [f"@@RRD:{interface}", amostra_rrd if interface == "wan" else ""]
+    if "@@PKT:wan'" in script:
+        partes += ["@@PKT:wan", amostra_pkt]
+    if "@@PKT:opt1'" in script:
+        partes += ["@@PKT:opt1", ""]  # link sem o arquivo de pacotes: nao pode quebrar a coleta
     partes += ["@@LOGINFO", "-rw-r--r--  1 root  wheel  81234 Oct 30 12:00 /var/log/gateways.log", "@@LOG", log, "@@FIM"]
     return "\r\n".join(partes)  # o menu do pfSense devolve \r\n
 t.connect_firewall = lambda fw_: ClienteFalso()
@@ -123,9 +139,14 @@ resumo = t.coletar_firewall(firewall, agora)
 assert resumo["eventos_novos"] == 7 and resumo["redes"] == 3 and resumo["interfaces"] == 5, resumo  # wan, opt1, lan, opt2, ipsec
 assert len(comandos) == 1, "deve usar UMA execucao so (firewall com shell de menu e lento por comando)"
 assert "/var/db/rrd/ipsec-traffic.rrd" in comandos[0] and " -s -240h" in comandos[0]  # primeira coleta busca mais historico
+assert "/var/db/rrd/wan-packets.rrd" in comandos[0] and "/var/db/rrd/opt1-packets.rrd" in comandos[0]
+assert "lan-packets" not in comandos[0] and "ipsec-packets" not in comandos[0], "bloqueios so nos links de internet"
 
 db = get_db()
 assert db.execute("SELECT COUNT(*) c FROM pfsense_traffic_hourly WHERE interface_key='wan'").fetchone()["c"] == 2
+assert [r["in_block_pps"] for r in db.execute("SELECT in_block_pps FROM pfsense_traffic_hourly WHERE interface_key='wan' ORDER BY bucket_start").fetchall()] == [2.5, 0.0]
+assert db.execute("SELECT in_avg_bps FROM pfsense_traffic_hourly WHERE interface_key='wan' AND bucket_start='2026-10-28 11:00:00'").fetchone()["in_avg_bps"] == 2e5 * 8  # o trafego nao foi sobrescrito
+assert db.execute("SELECT COUNT(*) c FROM pfsense_traffic_hourly WHERE interface_key='opt1' AND in_block_pps IS NOT NULL").fetchone()["c"] == 0
 assert db.execute("SELECT COUNT(*) c FROM pfsense_networks WHERE firewall_id=?", (fw,)).fetchone()["c"] == 3
 assert db.execute("SELECT preferred FROM pfsense_links WHERE gateway_name='WAN_NWT'").fetchone()["preferred"] == 1
 assert db.execute("SELECT preferred FROM pfsense_links WHERE gateway_name='WAN_EXOS'").fetchone()["preferred"] == 0
@@ -141,6 +162,7 @@ comandos.clear()
 resumo2 = t.coletar_firewall(firewall, agora)
 assert resumo2["eventos_novos"] == 0, resumo2  # eventos ja gravados nao duplicam
 assert len(comandos) == 1 and " -s -12h" in comandos[0], comandos  # depois so revisa as ultimas horas
+assert "wan-packets.rrd AVERAGE -r 3600 -s -12h" in comandos[0], comandos  # ja tem historico de bloqueios: so revisa
 db = get_db()
 assert db.execute("SELECT name FROM pfsense_networks WHERE interface_key='lan'").fetchone()["name"] == "Escritorio"
 assert db.execute("SELECT COUNT(*) c FROM pfsense_traffic_hourly WHERE interface_key='wan'").fetchone()["c"] == 2  # upsert, sem duplicar
@@ -168,6 +190,8 @@ secoes = t.dividir_secoes("lixo antes\r\n@@TZ\r\n-0300\r\n@@RRD:wan\r\nlinha1\r\
 assert secoes == {"TZ": "-0300", "RRD:wan": "linha1\nlinha2", "FIM": ""}, secoes
 assert t.dividir_secoes("") == {} and t.dividir_secoes(None) == {}
 assert "Gateway alarm" in script  # o grep tambem pede a acao do alarme
+pkt = t.montar_script(["wan"], 12, ["wan", "x; reboot"], 240)
+assert "@@PKT:wan'" in pkt and "wan-packets.rrd" in pkt and "-s -240h" in pkt and "reboot" not in pkt, pkt
 
 # ---------- aprendido na primeira leitura real (firewall MK): sem linhas MONITOR:, a acao do alarme prova a troca ----------
 acao = ("Oct 28 02:16:03 fw rc.gateway_alarm[999]: >>> Gateway alarm: WAN_EXOS (Addr:177.0.0.1 Alarm:1 RTT:15.4ms RTTsd:12.0ms Loss:22%)\n"
