@@ -57,7 +57,7 @@ def dados_mk():
             {"nome": "VPN (túnel IPsec)", "tipo": "vpn", "cidr": None, "vlan": None, "gb_down": 1.5},
         ],
         "eventos": eventos, "sem_energia": sem_energia,
-        "failover": {"configurado": True, "acionou": 10, "funcionou": 10},
+        "failover": {"configurado": True, "acionou": 10, "funcionou": 10, "verificado": True},
         "firewall": {"cpu_pico_pct": 12}, "lan": {"latencia_ms": 0.8, "perda_pct": 0},
         "wifi": {"latencia_ms": 70, "latencia_min_ms": 40, "latencia_max_ms": 100},
         "dhcp": {"usados": 85, "total": 106},

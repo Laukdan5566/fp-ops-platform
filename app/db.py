@@ -729,6 +729,68 @@ def init_db():
     )
     """)
 
+    # ---- Relatorio tecnico de internet: o que o firewall guarda e o FP Ops passa a ler (so leitura) ----
+    add_column_if_missing(cur, "pfsense_links", "role", "TEXT")           # 'principal' | 'reserva' (vazio = automatico pelo grupo de gateways)
+    add_column_if_missing(cur, "pfsense_links", "preferred", "INTEGER DEFAULT 0")  # link de tier 1 no grupo de failover
+    add_column_if_missing(cur, "pfsense_links", "traffic_key", "TEXT")    # nome da interface no pfSense (ex.: wan, opt1) para ler o historico de trafego
+    add_column_if_missing(cur, "pfsense_firewalls", "failover_info", "TEXT")  # JSON: grupos de gateway encontrados na ultima leitura
+    add_column_if_missing(cur, "pfsense_firewalls", "report_expediente", "TEXT DEFAULT '8-18'")
+    add_column_if_missing(cur, "pfsense_firewalls", "report_notes", "TEXT")  # observacoes que o operador quer ver no relatorio
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pfsense_networks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firewall_id INTEGER NOT NULL,
+        interface_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'cabeada',
+        cidr TEXT,
+        vlan INTEGER,
+        include_in_report INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pfsense_traffic_hourly (
+        firewall_id INTEGER NOT NULL,
+        interface_key TEXT NOT NULL,
+        bucket_start TEXT NOT NULL,
+        in_avg_bps REAL,
+        out_avg_bps REAL,
+        collected_at TEXT,
+        PRIMARY KEY (firewall_id, interface_key, bucket_start)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pfsense_gateway_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firewall_id INTEGER NOT NULL,
+        gateway_name TEXT NOT NULL,
+        event_at TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        loss_percent REAL,
+        latency_ms REAL,
+        detail TEXT,
+        event_key TEXT NOT NULL
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pfsense_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firewall_id INTEGER NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'manual',
+        generated_at TEXT NOT NULL,
+        summary TEXT,
+        html TEXT NOT NULL
+    )
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pfsense_storage (
         id INTEGER PRIMARY KEY,
@@ -1069,6 +1131,22 @@ def init_db():
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_pfsense_link_speedtests_link_tested
         ON pfsense_link_speedtests(link_id, tested_at)
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pfsense_gateway_events_key
+        ON pfsense_gateway_events(firewall_id, event_key)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pfsense_gateway_events_time
+        ON pfsense_gateway_events(firewall_id, event_at)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pfsense_networks_firewall
+        ON pfsense_networks(firewall_id)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pfsense_reports_firewall
+        ON pfsense_reports(firewall_id, generated_at)
     """)
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_cliente_contatos_cliente

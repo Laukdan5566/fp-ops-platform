@@ -168,10 +168,8 @@ def kpis(dados, links):
     if nome:
         total = len(lista)
         acionou = sum(1 for e in lista if e.get("failover_s") is not None)
-        cards.append({
-            "valor": str(total),
-            "texto": f"Oscilações na {nome}; o failover agiu em {'todas' if acionou == total else f'{acionou}'}",
-        })
+        sufixo = "" if not acionou else f"; o failover agiu em {'todas' if acionou == total else acionou}"
+        cards.append({"valor": str(total), "texto": f"Oscilações na {nome}{sufixo}"})
     else:
         cards.append({"valor": "0", "texto": "Oscilações nos links no período"})
     energia = energia_total_s(dados)
@@ -198,10 +196,12 @@ def situacao_por_item(dados, links):
     if len(dados["links"]) >= 2 and failover:
         if not failover.get("configurado"):
             itens.append(("Failover entre os links", "ruim", "Não configurado"))
-        elif failover.get("acionou", 0) > failover.get("funcionou", 0):
+        elif failover.get("verificado") and failover.get("acionou", 0) > failover.get("funcionou", 0):
             itens.append(("Failover entre os links", "ruim", "Falhou em trocas"))
-        else:
+        elif failover.get("verificado") and failover.get("acionou", 0) > 0:
             itens.append(("Failover entre os links", "ok", "Funcionando"))
+        else:
+            itens.append(("Failover entre os links", "ok", "Configurado"))
     firewall = dados.get("firewall") or {}
     if firewall.get("cpu_pico_pct") is not None:
         pico = firewall["cpu_pico_pct"]
@@ -431,7 +431,7 @@ def diagnosticos(dados, links):
             "porque": "Parte dessa demora pode ser só a economia de bateria dos celulares. Mas, se as reclamações vierem principalmente de quem usa Wi-Fi, os aparelhos de Wi-Fi precisam ser avaliados. O firewall mostra o volume de tráfego, não a qualidade do sinal sem fio.",
         })
     failover = dados.get("failover") or {}
-    if failover.get("configurado") and failover.get("acionou") and failover.get("funcionou") == failover.get("acionou"):
+    if failover.get("configurado") and failover.get("verificado") and failover.get("acionou") and failover.get("funcionou") == failover.get("acionou"):
         itens.append({
             "sev": "positivo", "chave": "failover", "titulo": "Failover configurado e funcionando",
             "texto": f"O firewall tem grupos de failover entre os links. Nas {failover['acionou']} oscilações do período, ele trocou de link sozinho e voltou quando o link normalizou.",
@@ -500,11 +500,17 @@ GLOSSARIO = [
 def resumo_executivo(dados, links, situacao, itens):
     """Texto de abertura e os 'fatores' que explicam a sensacao de internet ruim."""
     qtd = len(dados["links"])
+    if qtd == 0:
+        return {"abertura": f"{dados['cliente']} ainda não tem links de internet cadastrados neste painel. Use \"Descobrir WANs\" na tela do firewall "
+                            "para o FP Ops começar a medir disponibilidade, latência e velocidade de cada link.", "fatores": [], "tem_ruim": False, "vazio": True}
     uso_ok = any(nome.startswith("Velocidade") and cor == "ok" for nome, cor, _ in situacao)
-    failover_ok = any(nome.startswith("Failover") and cor == "ok" for nome, cor, _ in situacao)
+    failover_ok = any(nome.startswith("Failover") and texto == "Funcionando" for nome, cor, texto in situacao)
     partes = [f"{dados['cliente']} tem {NUMERAL.get(qtd, qtd)} link{'s' if qtd != 1 else ''} de internet" + (" com velocidade de sobra para o uso da empresa" if uso_ok else "")]
     if qtd >= 2:
-        partes.append(" e um failover configurado e funcionando: quando um link falha, o firewall passa automaticamente para o outro" if failover_ok else ", mas o failover entre eles precisa de atenção")
+        configurado = any(nome.startswith("Failover") and texto in ("Funcionando", "Configurado") for nome, _, texto in situacao)
+        partes.append(" e um failover configurado e funcionando: quando um link falha, o firewall passa automaticamente para o outro" if failover_ok
+                      else " e um failover configurado: quando um link falha, o firewall passa automaticamente para o outro" if configurado
+                      else ", mas o failover entre eles precisa de atenção")
     texto = "".join(partes) + "."
     firewall_ok = any(nome.startswith("Desempenho") and cor == "ok" for nome, cor, _ in situacao)
     if firewall_ok:

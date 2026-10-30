@@ -18,6 +18,9 @@ from pfsense_storage import (
 )
 from secret_store import decrypt_backup, encrypt_secret
 from util import agora_sql, enriquecer_uptime_pfsense
+from relatorio_dados import BRT, coletar_dados
+from relatorio_pagina import contexto_pagina
+from relatorio_tecnico import montar_relatorio
 
 
 bp = Blueprint("pfsense_web", __name__)
@@ -654,6 +657,41 @@ def pfsense_internet_report(firewall_id):
             html, mimetype="text/html",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}-internet-{days}d.html"'},
         )
+    return html
+
+
+def _periodo_do_relatorio(args):
+    """?days=7|14|30 (ate agora) ou ?inicio=AAAA-MM-DD&fim=AAAA-MM-DD (dias inteiros, em Brasilia)."""
+    agora = datetime.now(BRT).replace(tzinfo=None, second=0, microsecond=0)
+    try:
+        inicio = datetime.strptime(args.get("inicio", ""), "%Y-%m-%d")
+        fim = datetime.strptime(args.get("fim", ""), "%Y-%m-%d").replace(hour=23, minute=59)
+        if inicio < fim and (fim - inicio).days <= 92:
+            return inicio, min(fim, agora), None
+    except ValueError:
+        pass
+    try:
+        dias = int(args.get("days") or 7)
+    except ValueError:
+        dias = 7
+    dias = dias if dias in (7, 14, 30) else 7
+    return agora - timedelta(days=dias), agora, dias
+
+
+@bp.route("/pfsense/<int:firewall_id>/relatorio-tecnico")
+@login_required
+def pfsense_relatorio_tecnico(firewall_id):
+    inicio, fim, dias = _periodo_do_relatorio(request.args)
+    db = get_db()
+    dados = coletar_dados(db, firewall_id, inicio, fim, emitido_em=datetime.now(BRT).replace(tzinfo=None))
+    db.close()
+    if dados is None:
+        return "Firewall nao encontrado", 404
+    html = render_template("pfsense_tech_report.html", **contexto_pagina(montar_relatorio(dados), dias or 0, f"/pfsense/{firewall_id}"))
+    if request.args.get("download"):
+        nome = re.sub(r"[^A-Za-z0-9_.-]+", "-", dados["cliente"]).strip("-") or "pfsense"
+        return Response(html, mimetype="text/html", headers={
+            "Content-Disposition": f'attachment; filename="{nome}-relatorio-internet-{inicio:%Y%m%d}-{fim:%Y%m%d}.html"'})
     return html
 
 

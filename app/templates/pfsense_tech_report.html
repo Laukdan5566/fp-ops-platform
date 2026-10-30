@@ -84,7 +84,7 @@ td.num,th.num{text-align:right}
 
 <h2><span class="n">1</span>Resumo executivo</h2>
 <p>{{ r.resumo.abertura }}
-{% if r.resumo.fatores %}A sensação de "internet ruim" se explica por {{ {1:'um fator',2:'dois fatores',3:'três fatores',4:'quatro fatores'}.get(r.resumo.fatores|length, 'alguns fatores') }}:{% else %}Não houve ocorrência relevante no período.{% endif %}</p>
+{% if r.resumo.vazio %}{% elif r.resumo.fatores %}A sensação de "internet ruim" se explica por {{ {1:'um fator',2:'dois fatores',3:'três fatores',4:'quatro fatores'}.get(r.resumo.fatores|length, 'alguns fatores') }}:{% else %}Não houve ocorrência relevante no período.{% endif %}</p>
 {% if r.resumo.fatores %}<ul class="fatores">{% for f in r.resumo.fatores %}<li>{% for texto, negrito in f %}{% if negrito %}<b>{{ texto }}</b>{% else %}{{ texto }}{% endif %}{% endfor %}{{ ';' if not loop.last else '.' }}</li>{% endfor %}</ul>{% endif %}
 
 <div class="cols">
