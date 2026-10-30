@@ -22,6 +22,8 @@ from db import DB_PATH, USING_POSTGRES, get_db, init_db
 from zammad import avaliar_alertas
 from pfsense_agent import run_due_firewalls, run_requested_firewall_speedtests
 from pfsense_links import run_due_link_tests, run_requested_link_tests
+from pfsense_telemetry import run_due_telemetry
+from relatorio_semanal import run_due_weekly_reports
 from pfsense_storage import run_storage_cleanup
 from ticketz_notifications import process_notification_outbox
 from helpdesk_reminders import queue_internal_reminders
@@ -536,6 +538,18 @@ if __name__ == "__main__":
                 processar_emails()
                 run_due_firewalls()
                 run_due_link_tests()
+                try:  # leitura de trafego/logs para o relatorio tecnico: um erro aqui nao pode atrapalhar o restante
+                    run_due_telemetry()
+                except Exception as e:
+                    print("Telemetria pfSense:", e, flush=True)
+                try:  # relatorio tecnico da semana anterior, gerado sozinho na segunda-feira
+                    _db = get_db()
+                    try:
+                        run_due_weekly_reports(_db)
+                    finally:
+                        _db.close()
+                except Exception as e:
+                    print("Relatorio semanal pfSense:", e, flush=True)
                 run_storage_cleanup()
                 executar_retencao_automatica()
                 process_infrastructure_notifications()

@@ -18,6 +18,9 @@ from pfsense_storage import (
 )
 from secret_store import decrypt_backup, encrypt_secret
 from util import agora_sql, enriquecer_uptime_pfsense
+from relatorio_dados import BRT, coletar_dados
+from relatorio_pagina import contexto_pagina
+from relatorio_tecnico import montar_relatorio
 
 
 bp = Blueprint("pfsense_web", __name__)
@@ -655,6 +658,164 @@ def pfsense_internet_report(firewall_id):
             headers={"Content-Disposition": f'attachment; filename="{safe_name}-internet-{days}d.html"'},
         )
     return html
+
+
+def _periodo_do_relatorio(args):
+    """?days=7|14|30 (ate agora) ou ?inicio=AAAA-MM-DD&fim=AAAA-MM-DD (dias inteiros, em Brasilia)."""
+    agora = datetime.now(BRT).replace(tzinfo=None, second=0, microsecond=0)
+    try:
+        inicio = datetime.strptime(args.get("inicio", ""), "%Y-%m-%d")
+        fim = datetime.strptime(args.get("fim", ""), "%Y-%m-%d").replace(hour=23, minute=59)
+        if inicio < fim and (fim - inicio).days <= 92:
+            return inicio, min(fim, agora), None
+    except ValueError:
+        pass
+    try:
+        dias = int(args.get("days") or 7)
+    except ValueError:
+        dias = 7
+    dias = dias if dias in (7, 14, 30) else 7
+    return agora - timedelta(days=dias), agora, dias
+
+
+@bp.route("/pfsense/<int:firewall_id>/relatorio-tecnico")
+@login_required
+def pfsense_relatorio_tecnico(firewall_id):
+    inicio, fim, dias = _periodo_do_relatorio(request.args)
+    db = get_db()
+    dados = coletar_dados(db, firewall_id, inicio, fim, emitido_em=datetime.now(BRT).replace(tzinfo=None))
+    db.close()
+    if dados is None:
+        return "Firewall nao encontrado", 404
+    html = render_template("pfsense_tech_report.html", **contexto_pagina(montar_relatorio(dados), dias or 0, f"/pfsense/{firewall_id}"))
+    if request.args.get("download"):
+        nome = re.sub(r"[^A-Za-z0-9_.-]+", "-", dados["cliente"]).strip("-") or "pfsense"
+        return Response(html, mimetype="text/html", headers={
+            "Content-Disposition": f'attachment; filename="{nome}-relatorio-internet-{inicio:%Y%m%d}-{fim:%Y%m%d}.html"'})
+    return html
+
+
+TIPOS_DE_REDE = {"cabeada": "Rede cabeada", "wifi": "Wi-Fi", "vpn": "VPN"}
+
+
+def _carregar_ajustes(db, firewall_id):
+    firewall = db.execute("SELECT id, name, report_expediente, report_notes FROM pfsense_firewalls WHERE id=?", (firewall_id,)).fetchone()
+    if not firewall:
+        return None
+    links = db.execute("SELECT id, name, provider, role, preferred FROM pfsense_links WHERE firewall_id=? AND active=1 ORDER BY id", (firewall_id,)).fetchall()
+    redes = db.execute("SELECT id, interface_key, name, kind, cidr, vlan, include_in_report FROM pfsense_networks WHERE firewall_id=? ORDER BY id", (firewall_id,)).fetchall()
+    try:
+        inicio, fim = (int(x) for x in str(firewall["report_expediente"] or "8-18").split("-"))
+    except ValueError:
+        inicio, fim = 8, 18
+    return {"firewall": firewall, "links": [dict(l) for l in links], "redes": [dict(r) for r in redes], "inicio": inicio, "fim": fim}
+
+
+def _validar_ajustes(form, links, redes):
+    """Devolve (valores, erro). Nada e gravado quando ha erro."""
+    try:
+        inicio, fim = int(form.get("expediente_inicio", "")), int(form.get("expediente_fim", ""))
+    except ValueError:
+        return None, "Informe o horário do expediente com números inteiros."
+    if not (0 <= inicio < fim <= 24):
+        return None, "O expediente precisa começar antes de terminar (de 0 a 24 horas)."
+    notas = (form.get("report_notes") or "").strip()
+    if len(notas) > 1500:
+        return None, "As observações passam de 1.500 caracteres."
+    papeis = {}
+    for link in links:
+        papel = (form.get(f"role_{link['id']}") or "").strip()
+        if papel not in ("", "principal", "reserva"):
+            return None, "Papel de link inválido."
+        papeis[link["id"]] = papel or None
+    if sum(1 for p in papeis.values() if p == "principal") > 1:
+        return None, "Só um link pode ser o principal (o padrão da empresa)."
+    dados_redes = {}
+    for rede in redes:
+        nome = (form.get(f"rede_nome_{rede['id']}") or "").strip()
+        tipo = (form.get(f"rede_tipo_{rede['id']}") or "").strip()
+        if not nome or len(nome) > 80:
+            return None, "Cada rede precisa de um nome de até 80 caracteres."
+        if tipo not in TIPOS_DE_REDE:
+            return None, "Tipo de rede inválido."
+        dados_redes[rede["id"]] = (nome, tipo, 1 if form.get(f"rede_incluir_{rede['id']}") else 0)
+    return {"expediente": f"{inicio}-{fim}", "notas": notas or None, "papeis": papeis, "redes": dados_redes}, None
+
+
+@bp.route("/pfsense/<int:firewall_id>/relatorio/ajustes", methods=["GET", "POST"])
+@login_required
+@admin_required
+def pfsense_relatorio_ajustes(firewall_id):
+    db = get_db()
+    ajustes = _carregar_ajustes(db, firewall_id)
+    if ajustes is None:
+        db.close()
+        return "Firewall nao encontrado", 404
+    erro, salvo = None, request.args.get("salvo")
+    if request.method == "POST":
+        valores, erro = _validar_ajustes(request.form, ajustes["links"], ajustes["redes"])
+        if erro is None:
+            db.execute("UPDATE pfsense_firewalls SET report_expediente=?, report_notes=?, updated_at=? WHERE id=?",
+                       (valores["expediente"], valores["notas"], agora_sql(), firewall_id))
+            for link_id, papel in valores["papeis"].items():
+                db.execute("UPDATE pfsense_links SET role=?, updated_at=? WHERE id=? AND firewall_id=?", (papel, agora_sql(), link_id, firewall_id))
+            for rede_id, (nome, tipo, incluir) in valores["redes"].items():
+                db.execute("UPDATE pfsense_networks SET name=?, kind=?, include_in_report=?, updated_at=? WHERE id=? AND firewall_id=?",
+                           (nome, tipo, incluir, agora_sql(), rede_id, firewall_id))
+            db.commit()
+            db.close()
+            return redirect(f"/pfsense/{firewall_id}/relatorio/ajustes?salvo=1")
+        # erro: reapresenta o que a pessoa digitou, sem gravar
+        ajustes["firewall"] = {**dict(ajustes["firewall"]), "report_notes": request.form.get("report_notes", "")}
+        for link in ajustes["links"]:
+            link["role"] = request.form.get(f"role_{link['id']}") or None
+        for rede in ajustes["redes"]:
+            rede["name"] = request.form.get(f"rede_nome_{rede['id']}", rede["name"])
+            rede["kind"] = request.form.get(f"rede_tipo_{rede['id']}", rede["kind"])
+            rede["include_in_report"] = 1 if request.form.get(f"rede_incluir_{rede['id']}") else 0
+        try:
+            ajustes["inicio"], ajustes["fim"] = int(request.form.get("expediente_inicio")), int(request.form.get("expediente_fim"))
+        except (TypeError, ValueError):
+            pass
+    db.close()
+    return render_template("pfsense_report_settings.html", tipos=TIPOS_DE_REDE, erro=erro, salvo=salvo, **ajustes), (400 if erro else 200)
+
+
+@bp.route("/pfsense/<int:firewall_id>/relatorios")
+@login_required
+def pfsense_relatorios(firewall_id):
+    db = get_db()
+    firewall = db.execute("SELECT id, name FROM pfsense_firewalls WHERE id=?", (firewall_id,)).fetchone()
+    if not firewall:
+        db.close()
+        return "Firewall nao encontrado", 404
+    relatorios = []
+    for linha in db.execute(
+        "SELECT id, period_start, period_end, kind, generated_at, summary FROM pfsense_reports WHERE firewall_id=? ORDER BY period_start DESC, id DESC LIMIT 60",
+        (firewall_id,),
+    ).fetchall():
+        item = dict(linha)
+        try:
+            item["resumo"] = json.loads(item["summary"] or "{}")
+        except ValueError:
+            item["resumo"] = {}
+        relatorios.append(item)
+    db.close()
+    return render_template("pfsense_reports.html", firewall=firewall, relatorios=relatorios)
+
+
+@bp.route("/pfsense/relatorio/<int:report_id>")
+@login_required
+def pfsense_relatorio_guardado(report_id):
+    db = get_db()
+    linha = db.execute("SELECT firewall_id, period_start, html FROM pfsense_reports WHERE id=?", (report_id,)).fetchone()
+    db.close()
+    if not linha:
+        return "Relatorio nao encontrado", 404
+    resposta = Response(linha["html"], mimetype="text/html")
+    if request.args.get("download"):
+        resposta.headers["Content-Disposition"] = f'attachment; filename="relatorio-internet-{linha["firewall_id"]}-{str(linha["period_start"])[:10]}.html"'
+    return resposta
 
 
 @bp.route("/pfsense/<int:firewall_id>/edit")

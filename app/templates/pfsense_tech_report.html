@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ r.cliente }} · Relatório técnico de internet · {{ r.periodo }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--navy:#10294a;--ink:#1c2b44;--muted:#667085;--line:#e4e7ec;--soft:#f6f7fb;--blue:#2b6fd6;--green:#16803b;--green-bg:#e3f5e9;--amber:#a8610a;--amber-bg:#fdf0d7;--red:#c62828;--red-bg:#fde3e3}
+*{box-sizing:border-box}
+body{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:var(--ink);margin:0;background:#eef0f4;line-height:1.5;font-size:13.5px}
+.pagina{max-width:860px;margin:0 auto;background:#fff;padding:34px 40px 40px}
+.barra{max-width:860px;margin:0 auto;padding:12px 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+.barra a,.barra button{background:#fff;border:1px solid #cfd5df;border-radius:6px;padding:7px 12px;text-decoration:none;color:var(--ink);cursor:pointer;font:inherit}
+.barra .principal{background:var(--navy);color:#fff;border-color:var(--navy)}
+.barra .muted{color:var(--muted);margin-left:auto}
+.capa{background:linear-gradient(135deg,#10294a,#1b3d66);color:#fff;border-radius:14px;padding:26px 28px 22px;position:relative;overflow:hidden;margin-bottom:26px}
+.capa:after{content:"";position:absolute;right:-60px;top:-70px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.06)}
+.capa .eyebrow{letter-spacing:.2em;font-size:10.5px;text-transform:uppercase;color:#a9bddb}
+.capa h1{margin:8px 0 6px;font-size:30px;line-height:1.15}
+.capa .sub{color:#c6d4ea;font-size:13.5px}
+.capa dl{display:grid;grid-template-columns:repeat(4,auto);gap:4px 36px;margin:20px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,.18)}
+.capa dt{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#a9bddb}
+.capa dd{margin:2px 0 0;font-weight:700;font-size:13px}
+h2{display:flex;align-items:center;gap:10px;font-size:19px;margin:30px 0 12px;break-after:avoid}
+h2 .n{background:var(--navy);color:#fff;border-radius:6px;font-size:13px;min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
+h3{font-size:14.5px;color:#183763;margin:20px 0 6px;break-after:avoid}
+p{margin:6px 0 10px}
+ul.fatores{margin:6px 0 14px;padding-left:22px}
+.cols{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;margin:14px 0}
+.painel{border:1px solid var(--line);border-radius:10px;padding:14px 16px;break-inside:avoid}
+.painel h4{margin:0 0 8px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.item{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #eef0f4;font-size:13px}
+.item:last-child{border-bottom:0}
+.chip{border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.chip.ok{background:var(--green-bg);color:var(--green)}.chip.atencao{background:var(--amber-bg);color:var(--amber)}.chip.ruim{background:var(--red-bg);color:var(--red)}
+.acoes p{margin:5px 0;font-size:13px}.acoes .peq{font-size:11.5px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+.kpi{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px 14px;break-inside:avoid}
+.kpi b{display:block;font-size:24px;color:var(--navy);line-height:1.1}.kpi span{font-size:11.5px;color:var(--muted)}
+table{border-collapse:collapse;width:100%;margin:10px 0 16px;font-size:12.5px}
+th{background:var(--soft);color:var(--muted);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr{break-inside:avoid}
+td.num,th.num{text-align:right}
+.termos{background:#f1f5ff;border-left:4px solid var(--blue);border-radius:0 8px 8px 0;padding:10px 14px;margin:14px 0;break-inside:avoid}
+.termos h5{margin:0 0 3px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue)}
+.legenda{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin:6px 0 2px}
+.legenda i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+.nota{font-size:11.5px;color:var(--muted)}
+.bloco{break-inside:avoid}
+.diag{border:1px solid var(--line);border-left-width:5px;border-radius:8px;padding:11px 14px;margin:10px 0;break-inside:avoid}
+.diag.critico{border-left-color:#d64545}.diag.alto{border-left-color:#e8a317}.diag.medio{border-left-color:#e8a317}.diag.verificar{border-left-color:#7a4fd1}.diag.positivo{border-left-color:#1fa971}.diag.baixo{border-left-color:#1fa971}
+.diag h4{margin:0 0 4px;font-size:14px;display:flex;gap:8px;align-items:center}
+.sev{font-size:11px;font-weight:700;border-radius:999px;padding:1px 9px}
+.sev.critico{background:var(--red-bg);color:var(--red)}.sev.alto,.sev.medio{background:var(--amber-bg);color:var(--amber)}.sev.verificar{background:#efe9fb;color:#5b34b0}.sev.positivo,.sev.baixo{background:var(--green-bg);color:var(--green)}
+.diag p{margin:3px 0;font-size:13px}
+.gloss{columns:2;column-gap:28px;font-size:12.5px}.gloss p{break-inside:avoid;margin:0 0 7px}
+.rodape-tela{color:var(--muted);font-size:11.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
+@page{size:A4;margin:16mm 14mm 18mm;@bottom-left{content:"{{ r.cliente }} · Relatório técnico de internet · {{ r.periodo }}";font-size:9pt;color:#98a2b3}@bottom-right{content:"Página " counter(page) " de " counter(pages);font-size:9pt;color:#98a2b3}}
+@media print{body{background:#fff}.barra{display:none}.pagina{max-width:none;padding:0}h2{break-after:avoid}.rodape-tela{display:none}}
+@media (max-width:720px){.cols{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.capa dl{grid-template-columns:repeat(2,auto)}.gloss{columns:1}}
+</style>
+</head>
+<body>
+<div class="barra">
+  <button class="principal" onclick="window.print()">Imprimir / salvar PDF</button>
+  {% if voltar %}<a href="{{ voltar }}">Voltar</a>{% endif %}
+  {% for d in (7, 14, 30) %}<a href="?days={{ d }}"{% if d == dias_periodo %} style="font-weight:700"{% endif %}>{{ d }} dias</a>{% endfor %}
+  <span class="muted">Dica: no diálogo de impressão, desative "Cabeçalhos e rodapés" e deixe os gráficos coloridos ("Gráficos de segundo plano").</span>
+</div>
+<div class="pagina">
+
+<div class="capa">
+  <div class="eyebrow">Relatório técnico · Infraestrutura de internet</div>
+  <h1>Diagnóstico da conexão de internet</h1>
+  <div class="sub">Análise de {{ r.periodo }} de {{ r.fim.year }}, a partir do firewall da empresa</div>
+  <dl>
+    <div><dt>Cliente</dt><dd>{{ r.cliente }}</dd></div>
+    <div><dt>Período analisado</dt><dd>{{ '%02d/%02d %s'|format(r.inicio.day, r.inicio.month, r.inicio.strftime('%H:%M')) }} – {{ '%02d/%02d %s'|format(r.fim.day, r.fim.month, r.fim.strftime('%H:%M')) }}</dd></div>
+    <div><dt>Fonte dos dados</dt><dd>{{ r.fonte }}</dd></div>
+    <div><dt>Emitido em</dt><dd>{{ r.emitido_em.strftime('%d/%m/%Y') }}</dd></div>
+  </dl>
+</div>
+
+<h2><span class="n">1</span>Resumo executivo</h2>
+<p>{{ r.resumo.abertura }}
+{% if r.resumo.vazio %}{% elif r.resumo.fatores %}A sensação de "internet ruim" se explica por {{ {1:'um fator',2:'dois fatores',3:'três fatores',4:'quatro fatores'}.get(r.resumo.fatores|length, 'alguns fatores') }}:{% else %}Não houve ocorrência relevante no período.{% endif %}</p>
+{% if r.resumo.fatores %}<ul class="fatores">{% for f in r.resumo.fatores %}<li>{% for texto, negrito in f %}{% if negrito %}<b>{{ texto }}</b>{% else %}{{ texto }}{% endif %}{% endfor %}{{ ';' if not loop.last else '.' }}</li>{% endfor %}</ul>{% endif %}
+
+<div class="cols">
+  <div class="painel"><h4>Situação por item</h4>
+    {% for nome, cor, texto in r.situacao %}<div class="item"><span>{{ nome }}</span><span class="chip {{ cor }}">{{ {'ok':'✓ ','atencao':'! ','ruim':'✕ '}[cor] }}{{ texto }}</span></div>{% endfor %}
+  </div>
+  <div class="painel acoes"><h4>Principais ações</h4>
+    {% for a in r.plano[:4] %}<p><b>{{ a.n }}.</b> {{ a.acao }}.</p>{% else %}<p>Nenhuma ação necessária no período.</p>{% endfor %}
+    {% if r.plano %}<p class="peq">O plano de ação completo está na seção 6.</p>{% endif %}
+  </div>
+</div>
+<div class="kpis">{% for k in r.kpis %}<div class="kpi"><b>{{ k.valor }}</b><span>{{ k.texto }}</span></div>{% endfor %}</div>
+{% if r.dados.observacoes %}<div class="termos"><h5>Observações do técnico</h5>{% for o in r.dados.observacoes %}<div>{{ o }}</div>{% endfor %}</div>{% endif %}
+
+<h2><span class="n">2</span>Como a internet da empresa está montada</h2>
+{{ diagrama|safe }}
+<table>
+  <tr><th>Link</th><th>Função</th><th class="num">Download</th><th class="num">Upload</th><th class="num">Latência média</th><th class="num">Perda média</th></tr>
+  {% for l in r.links %}<tr>
+    <td><b>{{ l.nome }}</b></td>
+    <td>{{ l.descricao or ('Principal' if l.funcao == 'principal' else 'Reserva') }}</td>
+    <td class="num">{{ '~' ~ num(l.down_mbps, 0) ~ ' Mbps' if l.down_mbps else '-' }}</td>
+    <td class="num">{{ '~' ~ num(l.up_mbps, 0) ~ ' Mbps' if l.up_mbps else '-' }}</td>
+    <td class="num">{{ num(l.latencia_ms) ~ ' ms' if l.latencia_ms is not none else '-' }}</td>
+    <td class="num">{{ num(l.perda_pct) ~ '%' if l.perda_pct is not none else '-' }}</td>
+  </tr>{% endfor %}
+</table>
+{% for t in r.termos if t.onde == 'montagem' %}<div class="termos"><h5>Em termos simples</h5>{{ t.texto }}</div>{% endfor %}
+
+<h2><span class="n">3</span>Capacidade × uso: falta internet?</h2>
+{% if graf_capacidade %}
+<div class="legenda"><span><i style="background:#e3ecf8"></i>Capacidade de download medida</span><span><i style="background:#8bb0e6"></i>Maior média de 1 hora</span><span><i style="background:#2b6fd6"></i>Uso médio do período</span></div>
+{{ graf_capacidade|safe }}
+<p class="nota">A capacidade foi medida com testes de velocidade de poucos segundos, feitos direto do firewall. O uso é a média por hora do tráfego de download.</p>
+{% else %}<p class="nota">Ainda não há medição de velocidade ou de tráfego suficiente para esta comparação.</p>{% endif %}
+{% if graf_redes %}
+<div class="bloco"><h3>Tráfego por rede (VLANs)</h3>
+<p>Como cada rede fica separada, o firewall mede o tráfego de cada uma. No período, o volume de download ficou assim:</p>
+{{ graf_redes|safe }}</div>
+{% endif %}
+{% if graf_uso %}
+<div class="bloco"><h3>Uso ao longo do período</h3>
+<div class="legenda">{% for l in legenda %}<span><i style="background:{{ l.cor }}"></i>{{ l.nome }} (download, média por hora)</span>{% endfor %}<span><i style="background:#f0f2f6"></i>Horário comercial</span>{% if r.tem_energia %}<span><i style="background:#fbe4e4"></i>Sem energia</span>{% endif %}</div>
+{{ graf_uso|safe }}</div>
+{% endif %}
+
+<h2><span class="n">4</span>Estabilidade: o que aconteceu no período</h2>
+<div class="legenda"><span><i style="background:#cfe8d8"></i>Funcionando</span><span><i style="background:#e8a317"></i>Oscilação</span><span><i style="background:#d64545"></i>Fora do ar</span><span><i style="background:#f0f2f6"></i>Horário comercial</span></div>
+{{ graf_disp|safe }}
+<table>
+  <tr><th>Dia</th><th>Situação</th><th class="num">Uso médio no expediente (Mbps)</th><th class="num">Pico de 1 hora (Mbps)</th><th class="num">Volume (GB)</th><th>Ocorrências</th></tr>
+  {% for d in r.dias %}<tr>
+    <td><b>{{ d.dia }}</b></td>
+    <td><span class="chip {{ {'ok':'ok','atencao':'atencao','critico':'ruim'}[d.gravidade] }}">{{ {'ok':'✓ Normal','atencao':'! Atenção','critico':'✕ Crítico'}[d.gravidade] }}</span></td>
+    <td class="num">{{ num(d.uso_expediente) }}</td><td class="num">{{ num(d.pico_hora) }}</td><td class="num">{{ num(d.volume_gb) }}</td>
+    <td>{{ d.ocorrencias }}</td>
+  </tr>{% endfor %}
+</table>
+{% if r.ocorrencias %}
+<h3>Detalhe das ocorrências</h3>
+<table>
+  <tr><th style="width:15%">Quando</th><th>Ocorrência</th><th style="width:26%">Impacto</th></tr>
+  {% for o in r.ocorrencias %}<tr><td>{{ o.quando }}</td><td>{% for texto, negrito in o.partes %}{% if negrito %}<b>{{ texto }}</b>{% else %}{{ texto }}{% endif %}{% endfor %}</td><td>{{ o.impacto }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% for t in r.termos if t.onde == 'estabilidade' %}<div class="termos"><h5>Em termos simples</h5>{{ t.texto }}</div>{% endfor %}
+
+<h2><span class="n">5</span>Diagnóstico</h2>
+{% for d in r.diagnosticos %}<div class="diag {{ d.sev }}"><h4><span class="sev {{ d.sev }}">{{ sev_nome[d.sev] }}</span>{{ d.titulo }}</h4><p>{{ d.texto }}</p><p><b>Por que importa:</b> {{ d.porque }}</p></div>
+{% else %}<p>Nenhum problema encontrado no período. A conexão ficou dentro dos parâmetros.</p>{% endfor %}
+
+<h2><span class="n">6</span>Plano de ação</h2>
+{% if r.plano %}
+<table>
+  <tr><th>#</th><th>Ação</th><th>Responsável</th><th>Prioridade</th><th>Resultado esperado</th></tr>
+  {% for a in r.plano %}<tr><td>{{ a.n }}</td><td>{{ a.acao }}</td><td>{{ a.responsavel }}</td><td><span class="chip {{ {'critico':'ruim','alto':'atencao','medio':'atencao','baixo':'ok'}[a.prioridade] }}">{{ a.prioridade_texto }}</span></td><td>{{ a.resultado }}</td></tr>{% endfor %}
+</table>
+{% else %}<p>Sem ações necessárias neste período.</p>{% endif %}
+
+<h2><span class="n">7</span>Glossário</h2>
+<div class="gloss">{% for termo, texto in r.glossario %}<p><b>{{ termo }}:</b> {{ texto }}</p>{% endfor %}</div>
+<h3>Metodologia e limitações</h3>
+<p class="nota">{{ metodologia }}</p>
+<div class="rodape-tela">Gerado automaticamente pelo FP Ops em {{ r.emitido_em.strftime('%d/%m/%Y %H:%M') }}.</div>
+</div>
+</body>
+</html>

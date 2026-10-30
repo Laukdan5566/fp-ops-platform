@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1">Relatórios de internet — {{ firewall.name }}</h2>
+        <div class="text-muted">Gerados sozinhos toda segunda-feira, com a semana anterior (segunda a domingo). Horários em Brasília.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-primary" target="_blank" href="/pfsense/{{ firewall.id }}/relatorio-tecnico?days=7">Gerar agora (7 dias)</a>
+        {% if session.tipo == "admin" %}<a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}/relatorio/ajustes">Ajustes</a>{% endif %}
+        <a class="btn btn-outline-secondary" href="/pfsense/{{ firewall.id }}">Voltar</a>
+    </div>
+</div>
+
+{% if relatorios %}
+<div class="table-responsive">
+<table class="table align-middle">
+    <thead><tr><th>Período</th><th>Gerado em</th><th>Destaques</th><th class="text-end">Ações</th><th></th></tr></thead>
+    <tbody>
+    {% for r in relatorios %}
+    <tr>
+        <td><b>{{ r.period_start[8:10] }}/{{ r.period_start[5:7] }} a {{ r.period_end[8:10] }}/{{ r.period_end[5:7] }}/{{ r.period_end[0:4] }}</b></td>
+        <td>{{ r.generated_at[8:10] }}/{{ r.generated_at[5:7] }}/{{ r.generated_at[0:4] }} {{ r.generated_at[11:16] }}</td>
+        <td>
+            {% if r.resumo.criticos %}{% for c in r.resumo.criticos %}<span class="badge text-bg-danger me-1">{{ c }}</span>{% endfor %}
+            {% elif r.resumo %}<span class="badge text-bg-success">Sem pontos críticos</span>{% else %}-{% endif %}
+        </td>
+        <td class="text-end">{{ r.resumo.acoes if r.resumo else '-' }}</td>
+        <td class="text-end">
+            <a class="btn btn-sm btn-outline-primary" target="_blank" href="/pfsense/relatorio/{{ r.id }}">Abrir</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/pfsense/relatorio/{{ r.id }}?download=1">Baixar HTML</a>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="alert alert-info">Ainda não há relatório semanal deste firewall. O primeiro sai na próxima segunda-feira, depois das 7h, desde que o firewall tenha links cadastrados (use "Descobrir WANs" na tela do firewall). Se quiser ver agora, use "Gerar agora".</div>
+{% endif %}
+{% endblock %}

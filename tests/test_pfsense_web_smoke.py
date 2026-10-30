@@ -43,4 +43,17 @@ for url in ("/pfsense", "/pfsense/new", "/pfsense/storage", f"/pfsense/{firewall
     r = http.get(url)
     assert r.status_code == 200, (url, r.status_code)
 assert "FW Smoke" in http.get("/pfsense").get_data(as_text=True)
+
+# relatorio tecnico de internet: abre mesmo sem dados coletados, aceita periodo, baixa HTML e pede login
+rel = f"/pfsense/{firewall_id}/relatorio-tecnico"
+assert anonimo.get(rel).status_code == 302
+r = http.get(rel)
+pagina = r.get_data(as_text=True)
+assert r.status_code == 200 and "Diagnóstico da conexão de internet" in pagina and "FW Smoke" in pagina, r.status_code
+assert http.get(rel + "?days=30").status_code == 200 and http.get(rel + "?days=abc").status_code == 200
+assert http.get(rel + "?inicio=2026-10-26&fim=2026-10-30").status_code == 200
+assert http.get(rel + "?inicio=2020-01-01&fim=2026-10-30").status_code == 200  # periodo longo demais: cai no padrao
+baixar = http.get(rel + "?download=1")
+assert baixar.status_code == 200 and "attachment" in baixar.headers["Content-Disposition"] and ".html" in baixar.headers["Content-Disposition"]
+assert http.get("/pfsense/99999/relatorio-tecnico").status_code == 404
 print("OK: telas de pfSense abrem")
