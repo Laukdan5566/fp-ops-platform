@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from datetime import datetime  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
 
 from fixture_relatorio import dados_mk  # noqa: E402
 from relatorio_tecnico import montar_relatorio  # noqa: E402
@@ -74,5 +74,22 @@ minimo = {"cliente": "X", "inicio": datetime(2026, 10, 1), "fim": datetime(2026,
           "links": [{"nome": "UNICO", "funcao": "principal", "down_mbps": None, "up_mbps": None}]}
 rm = montar_relatorio(minimo)
 assert rm["diagnosticos"] == [] and rm["plano"] == [] and len(rm["dias"]) == 2, rm
+
+# --- protecao: bloqueios na entrada dos links aparecem na tela (secao propria, numeracao seguinte deslocada) e somem quando nao ha dado
+from relatorio_semanal import renderizar  # noqa: E402
+
+sem, _ = renderizar(dados_mk())
+assert "Proteção: o que o firewall barrou" not in sem and "O plano de ação completo está na seção 6." in sem
+dias = [datetime(2026, 10, 26) + timedelta(days=i) for i in range(5)]
+com_dados = dados_mk()
+com_dados["protecao"] = {"total": 1_234_567, "por_link": [{"nome": "NWT", "pacotes": 1_000_000}, {"nome": "EXOS", "pacotes": 234_567}],
+                         "por_dia": [(d.date(), p) for d, p in zip(dias, [100_000, 400_000, 234_567, 500_000, 0])], "pico": (datetime(2026, 10, 29, 3), 90_000)}
+html, rel = renderizar(com_dados)
+assert "Proteção: o que o firewall barrou" in html and "1.234.567" in html and "1.000.000" in html, "secao de protecao"
+assert "O plano de ação completo está na seção 7." in html and '<span class="n">8</span>Glossário' in html
+assert rel["protecao"]["dias"][3]["barra"] == 100 and rel["protecao"]["dias"][4]["barra"] == 0 and "03h e 04h" in rel["protecao"]["pico"], rel["protecao"]
+zero = dict(com_dados, protecao={"total": 0, "por_link": [{"nome": "NWT", "pacotes": 0}], "por_dia": [(dias[0].date(), 0)], "pico": None})
+_, rel0 = renderizar(zero)
+assert rel0["protecao"]["total"] == 0 and not any(d["chave"] == "protecao" for d in rel0["diagnosticos"]), "sem bloqueio nao afirma protecao"
 
 print("OK: relatorio tecnico de internet reproduz os numeros e as conclusoes do relatorio da MK")

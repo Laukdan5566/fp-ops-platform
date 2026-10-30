@@ -80,7 +80,24 @@ def agrupar_por_hora(linhas, entrada="inpass", saida="outpass"):
     return resultado
 
 
-def montar_script(interfaces, horas):
+def bloqueios_por_hora(linhas):
+    """Pacotes/s de ENTRADA bloqueados (IPv4 + IPv6), media por hora cheia. No `-packets.rrd` do pfSense os valores ja sao pacotes/s."""
+    baldes = {}
+    for epoch, valores in linhas:
+        baldes.setdefault(((epoch - 1) // 3600) * 3600, []).append(valores)
+    resultado = {}
+    for inicio in sorted(baldes):
+        medias = []
+        for v in baldes[inicio]:
+            partes = [v.get(c) for c in ("inblock", "inblock6") if v.get(c) is not None]
+            if partes:
+                medias.append(sum(partes))
+        if medias:
+            resultado[datetime.fromtimestamp(inicio, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")] = sum(medias) / len(medias)
+    return resultado
+
+
+def montar_script(interfaces, horas, links_wan=(), horas_bloqueio=None):
     """UM unico script para o firewall inteiro: em firewall com o menu do pfSense como shell, cada comando abre uma sessao
     interativa (varios segundos), entao rodar um por interface estoura o tempo."""
     partes = ["echo '@@TZ'; date +%z"]
@@ -89,6 +106,11 @@ def montar_script(interfaces, horas):
             continue
         arquivo = shlex.quote(f"/var/db/rrd/{interface}-traffic.rrd")
         partes.append(f"echo '@@RRD:{interface}'; test -f {arquivo} && {RRDTOOL} fetch {arquivo} AVERAGE -r 3600 -s -{int(horas)}h 2>/dev/null")
+    for interface in links_wan:  # bloqueios so fazem sentido nas conexoes de internet (WAN)
+        if not NOME_SEGURO.match(interface or ""):
+            continue
+        arquivo = shlex.quote(f"/var/db/rrd/{interface}-packets.rrd")
+        partes.append(f"echo '@@PKT:{interface}'; test -f {arquivo} && {RRDTOOL} fetch {arquivo} AVERAGE -r 3600 -s -{int(horas_bloqueio or horas)}h 2>/dev/null")
     partes.append("echo '@@LOGINFO'; ls -la /var/log/gateways.log /var/log/system.log 2>&1")
     partes.append("echo '@@LOG'; cat /var/log/gateways.log /var/log/system.log 2>/dev/null | grep -E 'dpinger|MONITOR:|Gateway alarm' | tail -n 8000")
     partes.append("echo '@@FIM'; true")
@@ -241,7 +263,7 @@ def _agora_utc():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def gravar(db, firewall_id, redes, info, preferenciais, trafego, eventos, agora_texto):
+def gravar(db, firewall_id, redes, info, preferenciais, trafego, eventos, agora_texto, bloqueios=None):
     existentes = {r["interface_key"] for r in db.execute("SELECT interface_key FROM pfsense_networks WHERE firewall_id=?", (firewall_id,)).fetchall()}
     for rede in redes:
         if rede["interface_key"] not in existentes:  # nao sobrescreve o que o operador editou
@@ -256,6 +278,13 @@ def gravar(db, firewall_id, redes, info, preferenciais, trafego, eventos, agora_
                 "INSERT INTO pfsense_traffic_hourly (firewall_id, interface_key, bucket_start, in_avg_bps, out_avg_bps, collected_at) VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (firewall_id, interface_key, bucket_start) DO UPDATE SET in_avg_bps=excluded.in_avg_bps, out_avg_bps=excluded.out_avg_bps, collected_at=excluded.collected_at",
                 (firewall_id, interface, linha["bucket_start"], linha["in_avg_bps"], linha["out_avg_bps"], agora_texto),
+            )
+    for interface, horas in (bloqueios or {}).items():
+        for bucket, pps in horas.items():
+            db.execute(
+                "INSERT INTO pfsense_traffic_hourly (firewall_id, interface_key, bucket_start, in_block_pps, collected_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT (firewall_id, interface_key, bucket_start) DO UPDATE SET in_block_pps=excluded.in_block_pps",
+                (firewall_id, interface, bucket, pps, agora_texto),
             )
     novos = 0
     for e in eventos:
@@ -275,28 +304,31 @@ def coletar_firewall(firewall, agora_utc=None):
     try:
         links = [dict(r) for r in db.execute("SELECT interface_key, traffic_key FROM pfsense_links WHERE firewall_id=? AND active=1", (firewall["id"],)).fetchall()]
         tem_historico = db.execute("SELECT 1 FROM pfsense_traffic_hourly WHERE firewall_id=? LIMIT 1", (firewall["id"],)).fetchone() is not None
+        tem_bloqueios = db.execute("SELECT 1 FROM pfsense_traffic_hourly WHERE firewall_id=? AND in_block_pps IS NOT NULL LIMIT 1", (firewall["id"],)).fetchone() is not None
     finally:
         db.close()
     chaves_wan = {l["traffic_key"] or l["interface_key"] for l in links}
     horas = HORAS_REVISAO if tem_historico else HORAS_PRIMEIRA_COLETA
+    horas_bloqueio = HORAS_REVISAO if tem_bloqueios else HORAS_PRIMEIRA_COLETA  # primeira leitura de bloqueios busca o historico todo
     client = connect_firewall(firewall)
     try:
         root = ET.fromstring(read_config(client))
         redes = descobrir_redes(root, chaves_wan)
         interfaces = sorted(chaves_wan | {r["interface_key"] for r in redes})
-        saida = run_shell(client, montar_script(interfaces, horas), timeout=150)
+        saida = run_shell(client, montar_script(interfaces, horas, sorted(chaves_wan), horas_bloqueio), timeout=150)
     finally:
         client.close()
     secoes = dividir_secoes(saida)
     offset = offset_minutos(secoes.get("TZ", ""))
     trafego = {i: agrupar_por_hora(parse_rrd_fetch(secoes.get(f"RRD:{i}", ""))[1]) for i in interfaces}
+    bloqueios = {i: bloqueios_por_hora(parse_rrd_fetch(secoes.get(f"PKT:{i}", ""))[1]) for i in chaves_wan}
     logs = secoes.get("LOG", "")
     info = info_failover(root)
     eventos = parse_logs_gateway(logs, agora, offset)
     diagnostico = diagnostico_log(secoes, eventos)
     db = get_db()
     try:
-        novos = gravar(db, firewall["id"], redes, info, gateways_preferenciais(info), trafego, eventos, agora.strftime("%Y-%m-%d %H:%M:%S"))
+        novos = gravar(db, firewall["id"], redes, info, gateways_preferenciais(info), trafego, eventos, agora.strftime("%Y-%m-%d %H:%M:%S"), bloqueios)
         db.execute("UPDATE pfsense_firewalls SET telemetry_at=?, telemetry_error=NULL, telemetry_info=? WHERE id=?",
                    (agora.strftime("%Y-%m-%d %H:%M:%S"), json.dumps(diagnostico, ensure_ascii=False), firewall["id"]))
         db.commit()

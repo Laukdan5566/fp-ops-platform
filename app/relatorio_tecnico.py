@@ -233,6 +233,9 @@ def situacao_por_item(dados, links):
         itens.append((f"Upload do link principal ({principal['nome']})", "ruim" if ruim else "ok", f"~{num(principal['up_mbps'], 0)} Mbps" if ruim else "Adequado"))
     if energia_total_s(dados):
         itens.append(("Proteção contra falta de energia", "ruim", "Insuficiente"))
+    protecao = protecao_resumo(dados)
+    if protecao and protecao["total"] > 0:
+        itens.append(("Proteção contra acessos externos", "ok", "Ativa"))
     return itens
 
 
@@ -446,6 +449,13 @@ def diagnosticos(dados, links):
                 "texto": f"{dhcp['usados']} dos {dhcp['total']} endereços automáticos (DHCP) estão em uso, ou {num(pct, 0)}% da faixa.",
                 "porque": "Se a faixa esgotar, novos aparelhos não conseguem se conectar. Hoje ainda há folga.",
             })
+    protecao = protecao_resumo(dados)
+    if protecao and protecao["total"] > 0:
+        itens.append({
+            "sev": "positivo", "chave": "protecao", "titulo": "Firewall barrando tentativas de acesso vindas da internet",
+            "texto": f"No período, o firewall bloqueou {protecao['total_texto']} pacotes de entrada nos links de internet, tentativas de acesso que ninguém da empresa pediu.",
+            "porque": "Todo endereço público recebe tentativas automáticas de acesso o tempo todo (varreduras de portas, bots, tentativas de invasão). Esses números mostram o firewall fazendo seu trabalho: o que não foi autorizado não entrou na rede.",
+        })
     ordem = {k: i for i, k in enumerate(["critico", "alto", "medio", "verificar", "positivo", "baixo"])}
     itens.sort(key=lambda i: ordem[i["sev"]])
     return itens
@@ -476,6 +486,26 @@ def plano_de_acao(dados, itens, links):
     return acoes
 
 
+def inteiro(n):
+    """12345 -> '12.345' (padrao brasileiro)."""
+    return f"{int(n):,}".replace(",", ".")
+
+
+def protecao_resumo(dados):
+    """Tentativas de acesso vindas da internet que o firewall barrou (pacotes de entrada bloqueados nos links). None sem dado."""
+    p = dados.get("protecao")
+    if not p:
+        return None
+    maior = max((pacotes for _, pacotes in p["por_dia"]), default=0) or 1
+    dias = [{"dia": dia_data(dia), "pacotes": pacotes, "barra": round(pacotes * 100 / maior)} for dia, pacotes in p["por_dia"]]
+    pico = None
+    if p.get("pico") and p["pico"][1]:
+        hora, pacotes = p["pico"]
+        pico = f"{dia_data(hora)}, entre {hora:%H}h e {(hora + timedelta(hours=1)):%H}h ({inteiro(pacotes)} pacotes)"
+    return {"total": p["total"], "total_texto": inteiro(p["total"]), "por_link": [{"nome": l["nome"], "pacotes": inteiro(l["pacotes"])} for l in p["por_link"]],
+            "dias": dias, "pico": pico}
+
+
 def redes_com_percentual(dados):
     total = sum(r["gb_down"] for r in dados.get("redes", [])) or 0
     return [{**r, "pct": round(r["gb_down"] * 100 / total) if total else 0} for r in dados.get("redes", [])]
@@ -494,6 +524,7 @@ GLOSSARIO = [
     ("VLAN", "rede separada dentro da mesma estrutura física. Permite isolar e medir o tráfego de cada grupo, como o Wi-Fi."),
     ("Link preferencial", "o link que o failover usa primeiro, enquanto ele estiver saudável."),
     ("Nobreak", "bateria que mantém os equipamentos ligados na falta de energia."),
+    ("Pacote bloqueado", "dado que chegou da internet sem ter sido pedido por ninguém da empresa e que o firewall descartou. Uma tentativa de acesso pode gerar vários pacotes."),
 ]
 
 
@@ -515,6 +546,9 @@ def resumo_executivo(dados, links, situacao, itens):
     firewall_ok = any(nome.startswith("Desempenho") and cor == "ok" for nome, cor, _ in situacao)
     if firewall_ok:
         texto += " O firewall trabalhou folgado o período todo."
+    protecao = protecao_resumo(dados)
+    if protecao and protecao["total"] > 0:
+        texto += f" Ele também barrou {protecao['total_texto']} pacotes de tentativas de acesso vindas da internet."
     fatores = []
     chaves = {item["chave"] for item in itens}
     nome_osc, lista = link_mais_instavel(dados)
@@ -572,7 +606,7 @@ def montar_relatorio(dados):
         "links": links, "kpis": kpis(dados, links), "situacao": situacao,
         "resumo": resumo_executivo(dados, links, situacao, itens), "termos": termos_simples(dados), "glossario": GLOSSARIO,
         "redes": redes_com_percentual(dados), "dias": dias_do_periodo(dados, links), "ocorrencias": ocorrencias(dados),
-        "diagnosticos": itens, "plano": plano_de_acao(dados, itens, links),
+        "protecao": protecao_resumo(dados), "diagnosticos": itens, "plano": plano_de_acao(dados, itens, links),
         "tem_oscilacoes": bool(eventos_por_tipo(dados, "oscilacao")), "tem_energia": bool(dados.get("sem_energia")),
         "dados": dados,
     }

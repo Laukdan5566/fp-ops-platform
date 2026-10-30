@@ -53,6 +53,9 @@ for chave, nome in (("wan", "NWT"), ("opt1", "EXOS")):
         if mbps is not None:
             db.execute("INSERT INTO pfsense_traffic_hourly (firewall_id, interface_key, bucket_start, in_avg_bps, out_avg_bps) VALUES (?, ?, ?, ?, ?)",
                        (fw, chave, utc(hora), mbps * 1e6, mbps * 1e5))
+# bloqueios na entrada dos links (pacotes/s medios da hora): 2 pacotes/s = 7.200 por hora, em toda hora com trafego medido
+db.execute("UPDATE pfsense_traffic_hourly SET in_block_pps=2.0 WHERE firewall_id=? AND interface_key IN ('wan', 'opt1')", (fw,))
+horas_bloqueio = db.execute("SELECT COUNT(*) c FROM pfsense_traffic_hourly WHERE firewall_id=? AND in_block_pps IS NOT NULL", (fw,)).fetchone()["c"]
 # redes internas: volume de download = saida da interface, escolhido para dar os GB do gabarito em ~106 horas ativas
 horas_com_dado = sum(1 for _, v in mk["trafego_links"]["EXOS"] if v is not None)
 for chave, nome, tipo, vlan, gb in (("lan", "Rede principal (cabeada)", "cabeada", None, 100.4), ("opt2", "Wi-Fi Clientes", "wifi", 10, 34.2),
@@ -113,8 +116,19 @@ assert len(fora) == 1 and fora[0]["link"] == "NWT" and fora[0]["duracao_s"] == 1
 assert dados["failover"] == {"configurado": True, "acionou": 10, "funcionou": 10, "verificado": True}, dados["failover"]
 assert abs(sum(r["gb_down"] for r in dados["redes"]) - 155.0) < 1.5, dados["redes"]
 
+prot = dados["protecao"]
+assert prot["total"] == 7200 * horas_bloqueio and {l["nome"] for l in prot["por_link"]} == {"NWT", "EXOS"}, prot
+assert sum(p for _, p in prot["por_dia"]) == prot["total"] and prot["pico"][1] == 14400, prot  # no pico as duas WANs bloqueiam na mesma hora
+
 r = montar_relatorio(dados)
-kpis = {k["valor"]: k["texto"] for k in r["kpis"]}
+resumo_prot = r["protecao"]
+assert resumo_prot["total_texto"] == f"{prot['total']:,}".replace(",", ".") and len(resumo_prot["dias"]) == len(prot["por_dia"]), resumo_prot
+assert max(d["barra"] for d in resumo_prot["dias"]) == 100, resumo_prot
+assert any(d["chave"] == "protecao" and d["sev"] == "positivo" for d in r["diagnosticos"]), r["diagnosticos"]
+assert ("Proteção contra acessos externos", "ok", "Ativa") in r["situacao"], r["situacao"]
+assert "barrou" in r["resumo"]["abertura"] and resumo_prot["total_texto"] in r["resumo"]["abertura"], r["resumo"]["abertura"]
+assert not any(a["acao"] and "bloque" in a["acao"] for a in r["plano"]), r["plano"]  # protecao e informativa: nao gera acao
+kpis ={k["valor"]: k["texto"] for k in r["kpis"]}
 assert "14%" in kpis and "~5 Mbps" in kpis and "~11 h" in kpis, kpis
 assert "10" in kpis and "todas" in kpis["10"], kpis
 sit = {nome: (cor, texto) for nome, cor, texto in r["situacao"]}
@@ -141,6 +155,14 @@ sit_b = {nome: (cor, texto) for nome, cor, texto in rb["situacao"]}
 assert sit_b["Failover entre os links"] == ("ok", "Configurado"), sit_b  # nao afirma "funcionando" sem prova
 assert "failover agiu" not in " ".join(k["texto"] for k in rb["kpis"]), rb["kpis"]
 assert not any(d["chave"] == "failover" for d in rb["diagnosticos"])
+
+# firewall que nao entrega o dado de bloqueios: sem secao, sem afirmar protecao
+db.execute("UPDATE pfsense_traffic_hourly SET in_block_pps=NULL WHERE firewall_id=?", (fw,))
+db.commit()
+sem_prot = coletar_dados(db, fw, inicio, fim)
+assert sem_prot["protecao"] is None
+rs = montar_relatorio(sem_prot)
+assert rs["protecao"] is None and not any(d["chave"] == "protecao" for d in rs["diagnosticos"]) and "barrou" not in rs["resumo"]["abertura"]
 
 # firewall inexistente
 assert coletar_dados(db, 9999, inicio, fim) is None

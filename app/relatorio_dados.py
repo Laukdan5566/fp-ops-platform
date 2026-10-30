@@ -116,6 +116,32 @@ def _redes(db, firewall_id, ini_utc, fim_utc):
     return [r for r in redes if r["gb_down"] > 0] if any(r["gb_down"] > 0 for r in redes) else []
 
 
+def _protecao(db, firewall_id, links, inicio, fim, ini_utc, fim_utc):
+    """Pacotes de entrada bloqueados nos links de internet (media de pacotes/s da hora x 3600 s). None quando o firewall nao entregou o dado."""
+    por_link, por_dia, por_hora = [], {}, {}
+    for link in links:
+        linhas = db.execute(
+            "SELECT bucket_start, in_block_pps FROM pfsense_traffic_hourly WHERE firewall_id=? AND interface_key=? AND in_block_pps IS NOT NULL "
+            "AND datetime(bucket_start)>=datetime(?) AND datetime(bucket_start)<=datetime(?)", (firewall_id, link["traffic_key"], ini_utc, fim_utc),
+        ).fetchall()
+        total = 0.0
+        for linha in linhas:
+            hora = utc_para_brt(linha["bucket_start"])
+            if hora is None or not (inicio <= hora <= fim):
+                continue
+            pacotes = linha["in_block_pps"] * 3600
+            total += pacotes
+            por_dia[hora.date()] = por_dia.get(hora.date(), 0) + pacotes
+            por_hora[hora] = por_hora.get(hora, 0) + pacotes
+        if linhas:
+            por_link.append({"nome": link["nome"], "pacotes": round(total)})
+    if not por_link:
+        return None
+    pico = max(por_hora.items(), key=lambda kv: kv[1]) if por_hora else None
+    return {"total": sum(l["pacotes"] for l in por_link), "por_link": por_link,
+            "por_dia": [(dia, round(p)) for dia, p in sorted(por_dia.items())], "pico": (pico[0], round(pico[1])) if pico else None}
+
+
 def _eventos_do_log(db, firewall_id, links, ini_utc, fim_utc):
     por_gateway = {l["gateway"]: l["nome"] for l in links if l["gateway"]}
     linhas = db.execute(
@@ -255,6 +281,7 @@ def coletar_dados(db, firewall_id, inicio, fim, emitido_em=None):
         "links": links, "trafego_links": trafego, "redes": _redes(db, firewall_id, ini_utc, fim_utc),
         "eventos": eventos, "sem_energia": _queda_de_energia(db, firewall_id, inicio, ini_utc, fim_utc),
         "failover": failover or None, "firewall": _carga(db, firewall_id, ini_utc, fim_utc), "limitacoes": limitacoes,
+        "protecao": _protecao(db, firewall_id, links, inicio, fim, ini_utc, fim_utc),
         "observacoes": [t for t in (firewall["report_notes"] or "").splitlines() if t.strip()],
     }
     return dados
