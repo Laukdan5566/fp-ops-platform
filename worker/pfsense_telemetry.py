@@ -31,6 +31,8 @@ LINHA_ISO = re.compile(r"^(?P<data>\d{4}-\d{2}-\d{2})T(?P<hora>\d{2}:\d{2}:\d{2}
 DPINGER = re.compile(r"dpinger\[\d+\]:\s+(?P<gw>\S+)\s+\S+:\s+(?P<estado>Alarm|Clear)\s+latency\s+(?P<lat>\d+)us\s+stddev\s+\d+us\s+loss\s+(?P<perda>\d+)%")
 OMIT = re.compile(r"MONITOR:\s+(?P<gw>\S+)\s+has\s+.*?omitting from routing group")
 INCLUDE = re.compile(r"MONITOR:\s+(?P<gw>\S+)\s+is available now,\s+adding to routing group")
+# Este pfSense nao escreve "MONITOR:"; o rc.gateway_alarm registra a acao do firewall depois de cada alarme (Alarm:1 = saiu do grupo, Alarm:0 = voltou)
+ACAO_ALARME = re.compile(r"Gateway alarm:\s+(?P<gw>\S+)\s+\(.*?Alarm:(?P<estado>[01])\b")
 
 
 # ---------- leitura do historico (RRD) ----------
@@ -88,7 +90,7 @@ def montar_script(interfaces, horas):
         arquivo = shlex.quote(f"/var/db/rrd/{interface}-traffic.rrd")
         partes.append(f"echo '@@RRD:{interface}'; test -f {arquivo} && {RRDTOOL} fetch {arquivo} AVERAGE -r 3600 -s -{int(horas)}h 2>/dev/null")
     partes.append("echo '@@LOGINFO'; ls -la /var/log/gateways.log /var/log/system.log 2>&1")
-    partes.append("echo '@@LOG'; cat /var/log/gateways.log /var/log/system.log 2>/dev/null | grep -E 'dpinger|MONITOR:' | tail -n 8000")
+    partes.append("echo '@@LOG'; cat /var/log/gateways.log /var/log/system.log 2>/dev/null | grep -E 'dpinger|MONITOR:|Gateway alarm' | tail -n 8000")
     partes.append("echo '@@FIM'; true")
     return "\n".join(partes)
 
@@ -148,6 +150,9 @@ def parse_logs_gateway(texto, agora_utc, offset_min):
             tipo, gateway, perda, latencia = "omit", OMIT.search(linha)["gw"], None, None
         elif INCLUDE.search(linha):
             tipo, gateway, perda, latencia = "include", INCLUDE.search(linha)["gw"], None, None
+        elif ACAO_ALARME.search(linha):
+            acao = ACAO_ALARME.search(linha)
+            tipo, gateway, perda, latencia = ("omit" if acao["estado"] == "1" else "include"), acao["gw"], None, None
         else:
             continue
         quando = _quando_utc(linha, agora_utc, offset_min)
@@ -169,6 +174,7 @@ def diagnostico_log(secoes, eventos):
         "eventos_lidos": len(eventos),
         "amostra_dpinger": [l[:220] for l in linhas if "dpinger" in l][:2],
         "amostra_monitor": [l[:220] for l in linhas if "MONITOR:" in l][:2],
+        "amostra_acao": [l[:220] for l in linhas if "Gateway alarm" in l][:2],
         "fuso": secoes.get("TZ", "").strip()[:10],
     }
 
@@ -184,12 +190,15 @@ def info_failover(root):
                 itens.append({"gateway": partes[0], "tier": int(partes[1])})
         grupos.append({"nome": grupo.findtext("name"), "itens": itens})
     configurado = any(len({i["tier"] for i in g["itens"]}) >= 2 for g in grupos)
-    return {"configurado": configurado, "grupos": grupos}
+    # o grupo que o firewall usa como gateway padrao decide quem e o preferencial (o MK tem 3 grupos: FAILOVER_NWT, FAILOVER_EXOS...)
+    padrao = (root.findtext(".//gateways/defaultgw4") or root.findtext(".//gateways/defaultgw") or "").strip()
+    return {"configurado": configurado, "grupos": grupos, "padrao": padrao}
 
 
 def gateways_preferenciais(info):
-    """Gateway de menor tier (e unico nele) do primeiro grupo de failover; load balance (tiers iguais) nao tem preferencial."""
-    for grupo in info["grupos"]:
+    """Gateway de menor tier (e unico nele) do grupo padrao (ou, sem ele, do primeiro grupo de failover); load balance nao tem preferencial."""
+    grupos = sorted(info["grupos"], key=lambda g: 0 if g["nome"] and g["nome"] == info.get("padrao") else 1)
+    for grupo in grupos:
         tiers = {i["tier"] for i in grupo["itens"]}
         if len(tiers) < 2:
             continue
@@ -214,7 +223,13 @@ def descobrir_redes(root, chaves_wan):
         except ValueError:
             continue  # sem IPv4 fixo (dhcp/pppoe/none): nao e rede interna
         nome = (no.findtext("descr") or no.tag).strip()
-        tipo = "wifi" if re.search(r"wi-?fi|wlan|wireless|sem fio", nome, re.I) else "cabeada"
+        dispositivo = (no.findtext("if") or "").strip()
+        if re.match(r"(wg|ovpn[cs]|tun|tap|enc)\d", dispositivo) or re.search(r"\bvpn\b|wireguard|\bwg\d|peer", nome, re.I):
+            tipo = "vpn"
+        elif re.search(r"wi-?fi|wlan|wireless|sem fio", nome, re.I):
+            tipo = "wifi"
+        else:
+            tipo = "cabeada"
         redes.append({"interface_key": no.tag, "name": nome, "kind": tipo, "cidr": cidr, "vlan": vlans.get((no.findtext("if") or "").strip())})
     if root.find(".//ipsec/phase1") is not None:
         redes.append({"interface_key": "ipsec", "name": "VPN (túnel IPsec)", "kind": "vpn", "cidr": None, "vlan": None})

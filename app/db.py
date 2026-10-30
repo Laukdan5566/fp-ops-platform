@@ -66,9 +66,16 @@ def _translate_sql(sql):
     return sql
 
 
+# Tabelas com chave composta e SEM coluna id: nao ha sequencia, entao SELECT LASTVAL() falharia e abortaria a transacao no Postgres.
+TABELAS_SEM_ID = {"pfsense_traffic_hourly"}
+
+
 def _insert_uses_default_id(sql):
     match = re.search(r"\bINSERT\s+INTO\s+\w+\s*\(([^)]*)\)", sql, re.I | re.S)
     if not match:
+        return False
+    tabela = re.search(r"INSERT\s+INTO\s+(\w+)", sql, re.I).group(1).lower()
+    if tabela in TABELAS_SEM_ID:
         return False
     columns = [part.strip().strip('"').lower() for part in match.group(1).split(",")]
     return "id" not in columns
