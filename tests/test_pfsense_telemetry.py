@@ -85,7 +85,7 @@ info = t.info_failover(config)
 assert info["configurado"] is True and t.gateways_preferenciais(info) == {"WAN_NWT"}, info
 balanceado = ET.fromstring("<pfsense><gateways><gateway_group><name>LB</name><item>A|1|x</item><item>B|1|x</item></gateway_group></gateways></pfsense>")
 assert t.info_failover(balanceado)["configurado"] is False and t.gateways_preferenciais(t.info_failover(balanceado)) == set()
-assert t.info_failover(ET.fromstring("<pfsense/>")) == {"configurado": False, "grupos": []}
+assert t.info_failover(ET.fromstring("<pfsense/>")) == {"configurado": False, "grupos": [], "padrao": ""}
 
 # ---------- coleta completa com firewall falso, e segunda coleta sem duplicar ----------
 init_db()
@@ -167,4 +167,29 @@ assert script.rstrip().endswith("true")  # o ultimo comando nunca falha, senao o
 secoes = t.dividir_secoes("lixo antes\r\n@@TZ\r\n-0300\r\n@@RRD:wan\r\nlinha1\r\nlinha2\r\n@@FIM\r\n")
 assert secoes == {"TZ": "-0300", "RRD:wan": "linha1\nlinha2", "FIM": ""}, secoes
 assert t.dividir_secoes("") == {} and t.dividir_secoes(None) == {}
+assert "Gateway alarm" in script  # o grep tambem pede a acao do alarme
+
+# ---------- aprendido na primeira leitura real (firewall MK): sem linhas MONITOR:, a acao do alarme prova a troca ----------
+acao = ("Oct 28 02:16:03 fw rc.gateway_alarm[999]: >>> Gateway alarm: WAN_EXOS (Addr:177.0.0.1 Alarm:1 RTT:15.4ms RTTsd:12.0ms Loss:22%)\n"
+        "Oct 28 02:18:03 fw rc.gateway_alarm[999]: >>> Gateway alarm: WAN_EXOS (Addr:177.0.0.1 Alarm:0 RTT:10.4ms RTTsd:0.4ms Loss:0%)")
+ev = t.parse_logs_gateway(acao, agora, -180)
+assert [(e["kind"], e["gateway"]) for e in ev] == [("omit", "WAN_EXOS"), ("include", "WAN_EXOS")], ev
+
+# o grupo padrao do firewall (defaultgw4) decide o preferencial; VPN (wireguard/peer) nao vira rede cabeada
+cfg2 = ET.fromstring("""<pfsense><interfaces>
+ <opt1><enable/><if>wg0</if><descr>PEER_DANIEL</descr><ipaddr>10.99.0.1</ipaddr><subnet>24</subnet></opt1>
+ <opt2><enable/><if>igb2.11</if><descr>MK_ESCRITORIO</descr><ipaddr>10.0.2.1</ipaddr><subnet>24</subnet></opt2></interfaces>
+ <gateways><defaultgw4>FAILOVER_EXOS</defaultgw4>
+  <gateway_group><name>FAILOVER_NWT</name><item>NWT|1|address</item><item>EXOS|2|address</item></gateway_group>
+  <gateway_group><name>FAILOVER_EXOS</name><item>NWT|2|address</item><item>EXOS|1|address</item></gateway_group>
+ </gateways></pfsense>""")
+info2 = t.info_failover(cfg2)
+assert info2["padrao"] == "FAILOVER_EXOS" and t.gateways_preferenciais(info2) == {"EXOS"}, info2
+assert t.gateways_preferenciais({**info2, "padrao": ""}) == {"NWT"}  # sem padrao conhecido: primeiro grupo de failover
+assert [(r["interface_key"], r["kind"]) for r in t.descobrir_redes(cfg2, set())] == [("opt1", "vpn"), ("opt2", "cabeada")]
+
+# adaptador do banco: tabela sem coluna id nao pede SELECT LASTVAL() (no Postgres isso abortava a transacao inteira)
+from db import _insert_uses_default_id  # noqa: E402
+assert _insert_uses_default_id("INSERT INTO pfsense_traffic_hourly (firewall_id, interface_key, bucket_start) VALUES (?, ?, ?)") is False
+assert _insert_uses_default_id("INSERT INTO pfsense_networks (firewall_id, interface_key) VALUES (?, ?)") is True
 print("OK: telemetria do pfSense (RRD, log de gateways, redes, failover e agendamento)")
