@@ -2,6 +2,7 @@ import hashlib
 import os
 import re
 import sqlite3
+import threading
 from pathlib import Path
 from werkzeug.security import generate_password_hash
 
@@ -248,7 +249,16 @@ def create_postgres_helpers(cur):
     """)
 
 
+_INIT_LOCK = threading.Lock()
+
+
 def init_db():
+    # o worker chama isto de varias threads (cada tarefa no seu laco): o DDL nunca roda em paralelo no mesmo processo
+    with _INIT_LOCK:
+        _criar_esquema()
+
+
+def _criar_esquema():
     conn = get_db()
     cur = conn.cursor()
     create_postgres_helpers(cur)
@@ -376,6 +386,17 @@ def init_db():
         ativo INTEGER DEFAULT 1
     )
     """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS login_falhas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        ip TEXT,
+        falhou_em TEXT NOT NULL
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_login_falhas_username ON login_falhas (username, falhou_em)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_login_falhas_ip ON login_falhas (ip, falhou_em)")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS maintenance_runs (

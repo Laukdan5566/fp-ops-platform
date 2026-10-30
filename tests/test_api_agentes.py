@@ -45,6 +45,48 @@ db = get_db()
 assert db.execute("SELECT COUNT(*) AS c FROM agent_heartbeats WHERE UPPER(servidor_log)='SRV-API'").fetchone()["c"] == 1
 db.close()
 
+# historico enxuto: batimentos seguidos (o agente manda a cada ~45 s) viram 1 linha; mudar o status grava na hora
+def linhas_historico():
+    d = get_db()
+    try:
+        return d.execute("SELECT COUNT(*) AS c FROM agent_heartbeat_history WHERE UPPER(servidor_log)='SRV-API'").fetchone()["c"]
+    finally:
+        d.close()
+
+assert linhas_historico() == 1
+for _ in range(3):
+    assert http.post("/api/agent/heartbeat", json={"servidor_log": "srv-api", "agent_version": "1.0.0"}, headers=auth).status_code == 200
+assert linhas_historico() == 1, "batimentos seguidos nao devem gerar linhas novas"
+assert http.post("/api/agent/heartbeat", json={"servidor_log": "srv-api", "status": "warning"}, headers=auth).status_code == 200
+assert linhas_historico() == 2, "mudanca de status precisa ser registrada"
+db = get_db()
+db.execute("UPDATE agent_heartbeat_history SET seen_at='2000-01-01 00:00:00'")  # passou o intervalo minimo
+db.commit(); db.close()
+assert http.post("/api/agent/heartbeat", json={"servidor_log": "srv-api", "status": "warning"}, headers=auth).status_code == 200
+assert linhas_historico() == 3
+
+# o tempo online calculado com o historico enxuto e igual ao do historico completo (1 sinal a cada 45 s por 3 h, com 40 min de queda)
+from datetime import datetime, timedelta  # noqa: E402
+from api_agentes import HISTORICO_INTERVALO_MIN_S  # noqa: E402
+from monitoramento import calcular_uptime_por_eventos, calcular_streak_agent  # noqa: E402
+inicio = datetime(2026, 10, 30, 8, 0, 0)
+completo = []
+for i in range(0, 3 * 3600, 45):
+    quando = inicio + timedelta(seconds=i)
+    if not (timedelta(minutes=60) <= quando - inicio < timedelta(minutes=100)):
+        completo.append({"seen_at": quando.strftime("%Y-%m-%d %H:%M:%S"), "status": "online"})
+enxuto, ultimo = [], None
+for ev in completo:
+    atual = datetime.strptime(ev["seen_at"], "%Y-%m-%d %H:%M:%S")
+    if ultimo is None or (atual - ultimo).total_seconds() >= HISTORICO_INTERVALO_MIN_S:
+        enxuto.append(ev)
+        ultimo = atual
+assert len(enxuto) < len(completo) / 4
+fim = inicio + timedelta(hours=3)
+a, b = calcular_uptime_por_eventos(completo, inicio, fim), calcular_uptime_por_eventos(enxuto, inicio, fim)
+assert abs(a["online_min"] - b["online_min"]) <= 5 and abs(a["percentual"] - b["percentual"]) < 3, (a, b)
+assert calcular_streak_agent(completo, fim)["estado"] == calcular_streak_agent(enxuto, fim)["estado"] == "online"
+
 # servidor nao cadastrado: 202 e nao grava batimento
 db = get_db()
 db.execute("INSERT INTO api_keys (nome, token_hash, ativo) VALUES ('livre', ?, 1)", (hash_token("token-livre"),))
