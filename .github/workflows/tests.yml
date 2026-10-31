@@ -5,6 +5,19 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    # Producao roda em Postgres 16: a suite roda nos dois bancos (SQLite temporario e Postgres de verdade)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -12,4 +25,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python tests/run_all.py
+      - name: Testes (SQLite)
+        run: python tests/run_all.py
+      - name: Testes (Postgres)
+        run: python tests/run_all.py --postgres postgresql://postgres:teste@localhost:5432/postgres

@@ -975,6 +975,31 @@ def historico():
     )
 
 
+def _idade_min(texto, agora):
+    quando = parse_data(texto)
+    return max(0, int((agora - quando).total_seconds() // 60)) if quando else None
+
+
+def saude_das_coletas(db, agora=None):
+    """Tarefas do worker e coleta de cada firewall, cada uma com a idade do ultimo ciclo e `atrasada` quando passou muito do
+    esperado (3 x o intervalo, minimo 10 min). Mostra o que parou em silencio, que antes so aparecia no `docker logs`."""
+    agora = agora or datetime.now()
+    tarefas = []
+    for t in db.execute("SELECT * FROM worker_tarefas ORDER BY nome").fetchall():
+        idade = _idade_min(t["ultimo_ciclo_em"], agora)
+        esperado = max(10, 3 * (t["intervalo_s"] or 300) // 60)
+        tarefas.append({"nome": t["nome"], "idade_min": idade, "ciclos": t["ciclos"], "erros": t["erros"],
+                        "ultimo_erro": t["ultimo_erro"], "ultimo_erro_em": t["ultimo_erro_em"],
+                        "atrasada": idade is None or idade > esperado})
+    firewalls = []
+    for f in db.execute("SELECT name, last_check_at, last_status, last_error, telemetry_at, telemetry_error FROM pfsense_firewalls WHERE active=1 ORDER BY id").fetchall():
+        check, telemetria = _idade_min(f["last_check_at"], agora), _idade_min(f["telemetry_at"], agora)
+        firewalls.append({"nome": f["name"], "check_min": check, "status": f["last_status"], "erro": f["last_error"],
+                          "telemetria_min": telemetria, "telemetria_erro": f["telemetry_error"],
+                          "atrasado": check is None or check > 30 or f["last_status"] not in ("online", "success")})
+    return tarefas, firewalls
+
+
 @bp.route("/status")
 @login_required
 def status_sistema():
@@ -1019,6 +1044,7 @@ def status_sistema():
     worker_ref = parse_data(ultimo_worker["finished_at"] or ultimo_worker["started_at"]) if ultimo_worker else None
     worker_age = max(0, int((datetime.now() - worker_ref).total_seconds() // 60)) if worker_ref else None
     worker_fresh = worker_age is not None and worker_age <= 15 and ultimo_worker["status"] in ("success", "running")
+    tarefas, firewalls_saude = saude_das_coletas(db)
     db.close()
 
     return render_template(
@@ -1029,6 +1055,7 @@ def status_sistema():
         totais=totais,
         ticketz=ticketz, storage=storage, agent_versions=agent_versions,
         worker_age=worker_age, worker_fresh=worker_fresh,
+        tarefas=tarefas, firewalls_saude=firewalls_saude,
         title="Saúde da plataforma",
     )
 

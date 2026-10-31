@@ -14,7 +14,7 @@ temp_dir = Path(tempfile.mkdtemp(prefix="fp-ops-prune-test-"))
 backup_dir = temp_dir / "pfsense-backups"
 backup_dir.mkdir()
 os.environ["SECRET_KEY"] = "test-only-session-secret"
-os.environ["DATABASE_URL"] = ""
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
 os.environ["DB_PATH"] = str(temp_dir / "test.db")
 os.environ["PFSENSE_BACKUP_DIR"] = str(backup_dir)
 

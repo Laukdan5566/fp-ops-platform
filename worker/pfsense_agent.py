@@ -2,6 +2,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import secrets
@@ -18,6 +19,7 @@ from pfsense_storage import upload_backup_from_db
 from secret_store import decrypt_secret, encrypt_backup
 
 
+log = logging.getLogger("worker")
 BACKUP_ROOT = Path(os.getenv("PFSENSE_BACKUP_DIR", "/data/pfsense-backups"))
 
 
@@ -580,7 +582,7 @@ def run_due_firewalls():
             result = run_firewall_speedtest(firewall)
             results.append((firewall["id"], "speedtest", result["status"]))
     if results:
-        print(f"pfSense agent: {results}", flush=True)
+        log.info("pfSense agent: %s", results)
     return results
 
 
