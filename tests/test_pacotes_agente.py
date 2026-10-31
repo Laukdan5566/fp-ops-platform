@@ -10,7 +10,7 @@ temp_dir = Path(tempfile.mkdtemp(prefix="fp-ops-pacote-test-"))
 key_file = temp_dir / "credential.keys"
 key_file.write_bytes(Fernet.generate_key() + b"\n")
 os.environ["SECRET_KEY"] = "test-only-session-secret"
-os.environ["DATABASE_URL"] = ""
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
 os.environ["DB_PATH"] = str(temp_dir / "test.db")
 os.environ["CREDENTIAL_KEY_FILE"] = str(key_file)
 

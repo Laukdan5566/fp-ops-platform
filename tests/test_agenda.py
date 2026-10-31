@@ -7,7 +7,7 @@ from pathlib import Path
 
 temp_dir = Path(tempfile.mkdtemp(prefix="fp-ops-agenda-test-"))
 os.environ["SECRET_KEY"] = "test-only-session-secret"
-os.environ["DATABASE_URL"] = ""
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
 os.environ["DB_PATH"] = str(temp_dir / "test.db")
 
 import agenda  # noqa: E402
