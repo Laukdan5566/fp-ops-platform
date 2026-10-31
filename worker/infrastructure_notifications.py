@@ -10,13 +10,17 @@ from db import get_db
 BRASILIA = ZoneInfo("America/Sao_Paulo")
 REMINDER_HOURS = int(os.getenv("INFRA_INCIDENT_REMINDER_HOURS", "24"))
 PROBLEM_STATES = {
-    "server_offline", "backup_error", "backup_warning", "backup_overdue", "pfsense_offline"
+    "server_offline", "backup_error", "backup_warning", "backup_overdue", "pfsense_offline", "collector_stale"
 }
 PREFERENCE_BY_TYPE = {
     "server": "notify_servers",
     "backup": "notify_backups",
     "pfsense": "notify_pfsense",
+    "worker": "notify_servers",       # tarefas do worker do FP Ops (todas juntas, 1 aviso so)
+    "telemetria": "notify_pfsense",   # leitura de trafego/logs de um firewall
 }
+WORKER_MIN_ATRASO_MIN = 10        # tarefa do worker sem fechar um ciclo ha mais que max(isto, 3 x o intervalo dela)
+TELEMETRIA_MAX_IDADE_H = 3        # a leitura roda de hora em hora; 3 h sem leitura boa em firewall que responde = problema
 
 
 def utc_now():
@@ -80,6 +84,7 @@ def state_label(state):
         "backup_warning": "Backup concluído com alerta",
         "backup_overdue": "Backup atrasado ou não recebido",
         "pfsense_offline": "Firewall pfSense indisponível",
+        "collector_stale": "Coleta atrasada",
     }.get(state, state)
 
 
@@ -88,11 +93,15 @@ def incident_message(resource, detected_at):
         "server": "Verificar energia, conectividade e o serviço do agente FP Ops no servidor.",
         "backup": "Analisar o último log, o destino do backup, espaço disponível e a rotina agendada.",
         "pfsense": "Validar o link de Internet, energia e acesso SSH ao firewall antes de intervir.",
+        "worker": "Ver a tela Saúde da plataforma e o log do container do worker; reiniciar o worker se a tarefa estiver travada.",
+        "telemetria": "Ver a tela Saúde da plataforma; conferir o acesso SSH e o shell do firewall, que pode estar lento ou recusando comandos.",
     }
     impacts = {
         "server": "O monitor deixou de receber sinais do servidor e não consegue confirmar sua disponibilidade.",
         "backup": "A proteção dos dados pode estar fora da janela esperada até a rotina ser validada.",
         "pfsense": "O FP Ops não consegue confirmar a disponibilidade ou coletar dados do firewall.",
+        "worker": "Parte do monitoramento parou de rodar em silêncio: backups por e-mail, checagem de firewalls ou alertas podem estar desatualizados.",
+        "telemetria": "Os relatórios de internet deste firewall ficam sem dados novos de tráfego, bloqueios e oscilações.",
     }
     client = f"Cliente: {resource['client']}\n" if resource.get("client") else ""
     return (
@@ -223,6 +232,40 @@ def collect_resources(db, now):
             "type": "pfsense", "id": firewall["id"], "name": firewall["name"],
             "client": None, "state": "healthy" if firewall["last_status"] == "online" else "pfsense_offline",
             "title": "Firewall pfSense disponível novamente", "detail": firewall["last_error"],
+        })
+    resources.extend(collector_resources(db, now))
+    return resources
+
+
+def collector_resources(db, now):
+    """Coletas que pararam em silencio: tarefas do worker (todas num aviso so) e a leitura de telemetria de cada firewall que responde."""
+    resources = []
+    atrasadas = []
+    tarefas = db.execute("SELECT nome, intervalo_s, ultimo_ciclo_em FROM worker_tarefas ORDER BY nome").fetchall()
+    for tarefa in tarefas:
+        ultimo = parse_time(tarefa["ultimo_ciclo_em"])
+        limite = max(WORKER_MIN_ATRASO_MIN, 3 * int(tarefa["intervalo_s"] or 300) // 60)
+        if ultimo and now - ultimo > timedelta(minutes=limite):
+            atrasadas.append(f"{tarefa['nome']} (sem ciclo há {int((now - ultimo).total_seconds() // 60)} min)")
+    if tarefas:
+        resources.append({
+            "type": "worker", "id": 1, "name": "Tarefas do worker do FP Ops", "client": None,
+            "state": "collector_stale" if atrasadas else "healthy", "title": "Tarefas do worker normalizadas",
+            "detail": "Pararam de completar ciclos: " + ", ".join(atrasadas) + "." if atrasadas else None,
+        })
+    firewalls = db.execute("""
+        SELECT id, name, telemetry_at, telemetry_ok_at, telemetry_error FROM pfsense_firewalls
+        WHERE active=1 AND last_status='online' ORDER BY id
+    """).fetchall()
+    for firewall in firewalls:
+        if not firewall["telemetry_at"]:
+            continue  # a leitura ainda nao foi tentada
+        ok = parse_time(firewall["telemetry_ok_at"])
+        stale = not ok or now - ok > timedelta(hours=TELEMETRIA_MAX_IDADE_H)
+        resources.append({
+            "type": "telemetria", "id": firewall["id"], "name": f"Leitura de tráfego e logs: {firewall['name']}", "client": None,
+            "state": "collector_stale" if stale else "healthy", "title": "Leitura de tráfego e logs normalizada",
+            "detail": (firewall["telemetry_error"] or f"Sem leitura bem-sucedida desde {br_time(ok)}.") if stale and ok else firewall["telemetry_error"],
         })
     return resources
 

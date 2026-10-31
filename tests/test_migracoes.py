@@ -8,7 +8,7 @@ os.environ["SECRET_KEY"] = "test-only-session-secret"
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
 os.environ["DB_PATH"] = str(temp_dir / "test.db")
 
-from db import aplicar_migracoes, get_db, init_db  # noqa: E402
+from db import MIGRACOES, aplicar_migracoes, get_db, init_db  # noqa: E402
 
 init_db()
 chamadas = []
@@ -23,7 +23,7 @@ aplicar_migracoes(migracoes)
 aplicar_migracoes(migracoes)  # repetir nao reaplica
 assert chamadas == ["a", "b"], chamadas  # rodou em ordem de versao, uma vez cada
 db = get_db()
-assert [r["versao"] for r in db.execute("SELECT versao FROM schema_migrations ORDER BY versao").fetchall()] == [1, 101, 102]  # a 1 e a real (worker_tarefas), aplicada pelo init_db
+assert [r["versao"] for r in db.execute("SELECT versao FROM schema_migrations ORDER BY versao").fetchall()] == sorted([m[0] for m in MIGRACOES] + [101, 102])  # as reais (aplicadas pelo init_db) + as deste teste
 db.close()
 
 try:

@@ -277,7 +277,16 @@ def _migracao_worker_tarefas(cur):
     """)
 
 
-MIGRACOES = [(1, "tabela worker_tarefas (saude das tarefas do worker)", _migracao_worker_tarefas)]
+def _migracao_telemetry_ok_at(cur):
+    # a telemetria grava telemetry_at tambem quando falha; o alerta de coleta atrasada precisa da ultima leitura BOA
+    add_column_if_missing(cur, "pfsense_firewalls", "telemetry_ok_at", "TEXT")
+    cur.execute("UPDATE pfsense_firewalls SET telemetry_ok_at=telemetry_at WHERE telemetry_error IS NULL AND telemetry_at IS NOT NULL AND telemetry_ok_at IS NULL")
+
+
+MIGRACOES = [
+    (1, "tabela worker_tarefas (saude das tarefas do worker)", _migracao_worker_tarefas),
+    (2, "pfsense_firewalls.telemetry_ok_at (ultima leitura de telemetria sem erro)", _migracao_telemetry_ok_at),
+]
 
 
 def aplicar_migracoes(migracoes=None):
