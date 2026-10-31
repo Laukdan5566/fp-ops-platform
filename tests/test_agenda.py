@@ -58,6 +58,29 @@ nomes_dos_passos = {nome: [rotulo for rotulo, _ in x.passos] for nome, x in tare
 assert nomes_dos_passos["email"] == ["e-mails e Zammad"] and nomes_dos_passos["alertas"] == ["alertas de infraestrutura"]
 assert tarefas["pedidos-pfsense"].intervalo_s == 5 and tarefas["fila-whatsapp"].intervalo_s == 5
 
+# a retencao do worker e a da tela de administracao sao a mesma: roda 1 vez por dia
+from db import get_db  # noqa: E402
+worker.executar_retencao_automatica()
+worker.executar_retencao_automatica()
+d = get_db()
+assert d.execute("SELECT COUNT(*) c FROM maintenance_runs WHERE action='retention' AND status='success'").fetchone()["c"] == 1
+d.close()
+
+# saude: o estado de cada tarefa vai para o banco e a tela marca a que parou
+from monitoramento import saude_das_coletas  # noqa: E402
+tarefa = Tarefa("saude-teste", [("ok", lambda: None), ("quebra", quebra)], 300)
+tarefa.rodar_ciclo()
+worker.registrar_tarefa(tarefa)
+worker.registrar_tarefa(tarefa)  # repetir atualiza a mesma linha
+d = get_db()
+linhas = [x for x in saude_das_coletas(d)[0] if x["nome"] == "saude-teste"]
+assert len(linhas) == 1 and linhas[0]["erros"] == 1 and "quebra: falha de teste" in linhas[0]["ultimo_erro"] and not linhas[0]["atrasada"], linhas
+d.execute("UPDATE worker_tarefas SET ultimo_ciclo_em='2000-01-01 00:00:00'")
+d.commit()
+assert saude_das_coletas(d)[0][0]["atrasada"], "tarefa sem ciclo ha muito tempo precisa aparecer como atrasada"
+assert saude_das_coletas(d)[1] == []  # sem firewalls cadastrados
+d.close()
+
 # init_db chamado de varias threads ao mesmo tempo (cada tarefa chama no seu ciclo) nao quebra
 from db import init_db  # noqa: E402
 erros = []

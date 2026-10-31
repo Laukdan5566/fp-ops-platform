@@ -4,14 +4,10 @@ import html
 import imaplib
 import os
 import re
-import json
 import logging
-import shutil
 import sys
 import time
-import traceback
 import unicodedata
-from pathlib import Path
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
@@ -19,8 +15,9 @@ from email.utils import parsedate_to_datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(os.path.dirname(__file__))
-from db import DB_PATH, USING_POSTGRES, get_db, init_db
+from db import get_db, init_db
 from agenda import Tarefa, iniciar, vigiar
+from retencao import talvez_executar_retencao_automatica
 from zammad import avaliar_alertas
 from pfsense_agent import run_due_firewalls, run_requested_firewall_speedtests
 from pfsense_links import run_due_link_tests, run_requested_link_tests
@@ -31,6 +28,8 @@ from ticketz_notifications import process_notification_outbox
 from helpdesk_reminders import queue_internal_reminders
 from infrastructure_notifications import process_infrastructure_notifications
 
+
+log = logging.getLogger("worker")
 
 IMAP_CHECK_INTERVAL = int(os.getenv("IMAP_CHECK_INTERVAL", "300"))
 MAX_EMAILS_PER_RUN = int(os.getenv("MAX_EMAILS_PER_RUN", "1000"))
@@ -44,116 +43,15 @@ def agora_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def retention_config(db):
-    config = db.execute("SELECT * FROM retention_config WHERE id=1").fetchone()
-    if config:
-        return config
-
-    db.execute("""
-        INSERT OR IGNORE INTO retention_config (
-            id, logs_full_days, unknown_logs_days, worker_runs_days,
-            zammad_alerts_days, heartbeat_history_days, session_history_days, auto_enabled, updated_at
-        )
-        VALUES (1, 90, 30, 180, 180, 90, 30, 1, ?)
-    """, (agora_str(),))
-    db.commit()
-    return db.execute("SELECT * FROM retention_config WHERE id=1").fetchone()
-
-
 def executar_retencao_automatica():
+    """Uma vez por dia; a regra mora em app/retencao.py (a mesma da tela de administracao)."""
     if not RETENTION_CHECK_ENABLED:
         return
-
     init_db()
-    db = get_db()
-    run_id = None
     try:
-        config = retention_config(db)
-        if not int(config["auto_enabled"] or 0):
-            return
-
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        ja_rodou = db.execute("""
-            SELECT 1
-            FROM maintenance_runs
-            WHERE action='retention'
-              AND status IN ('success', 'running')
-              AND date(started_at)=date(?)
-            LIMIT 1
-        """, (hoje,)).fetchone()
-        if ja_rodou:
-            return
-
-        cur = db.execute("""
-            INSERT INTO maintenance_runs (action, started_at, status, detail)
-            VALUES ('retention', ?, 'running', 'auto-worker')
-        """, (agora_str(),))
-        run_id = cur.lastrowid
-        db.commit()
-
-        if USING_POSTGRES:
-            backup_path = "postgres"
-        else:
-            backup_path = Path(DB_PATH).parent / f"backups-retention-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
-        if not USING_POSTGRES and Path(DB_PATH).exists():
-            shutil.copy2(DB_PATH, backup_path)
-
-        logs_limite = (datetime.now() - timedelta(days=int(config["logs_full_days"] or 90))).strftime("%Y-%m-%d %H:%M:%S")
-        unknown_limite = (datetime.now() - timedelta(days=int(config["unknown_logs_days"] or 30))).strftime("%Y-%m-%d %H:%M:%S")
-        worker_limite = (datetime.now() - timedelta(days=int(config["worker_runs_days"] or 180))).strftime("%Y-%m-%d %H:%M:%S")
-        zammad_limite = (datetime.now() - timedelta(days=int(config["zammad_alerts_days"] or 180))).strftime("%Y-%m-%d %H:%M:%S")
-        heartbeat_limite = (datetime.now() - timedelta(days=int(config["heartbeat_history_days"] or 90))).strftime("%Y-%m-%d %H:%M:%S")
-        session_limite = (datetime.now() - timedelta(days=int(config["session_history_days"] or 30))).strftime("%Y-%m-%d %H:%M:%S")
-
-        stats = {}
-        stats["logs_compactados"] = db.execute("""
-            UPDATE logs_email
-            SET conteudo_raw=NULL
-            WHERE conteudo_raw IS NOT NULL
-              AND datetime(data_email) < datetime(?)
-        """, (logs_limite,)).rowcount
-        stats["nao_cadastrados_removidos"] = db.execute("""
-            DELETE FROM logs_nao_cadastrados
-            WHERE datetime(COALESCE(created_at, data_email)) < datetime(?)
-        """, (unknown_limite,)).rowcount
-        stats["worker_runs_removidos"] = db.execute("""
-            DELETE FROM worker_runs
-            WHERE datetime(started_at) < datetime(?)
-        """, (worker_limite,)).rowcount
-        stats["zammad_alertas_removidos"] = db.execute("""
-            DELETE FROM zammad_alertas
-            WHERE datetime(COALESCE(updated_at, created_at)) < datetime(?)
-        """, (zammad_limite,)).rowcount
-        stats["heartbeat_history_removidos"] = db.execute("""
-            DELETE FROM agent_heartbeat_history
-            WHERE datetime(seen_at) < datetime(?)
-        """, (heartbeat_limite,)).rowcount
-        stats["sessoes_removidas"] = db.execute("""
-            DELETE FROM user_sessions
-            WHERE ativo=0
-              AND datetime(COALESCE(logged_out_at, last_seen, created_at)) < datetime(?)
-        """, (session_limite,)).rowcount
-
-        detalhe = json.dumps({**stats, "backup": str(backup_path)}, ensure_ascii=False)
-        db.execute("""
-            UPDATE maintenance_runs
-            SET finished_at=?, status='success', detail=?
-            WHERE id=?
-        """, (agora_str(), detalhe, run_id))
-        db.commit()
-        db.execute("VACUUM")
-        print(f"Retencao automatica: {detalhe}", flush=True)
+        talvez_executar_retencao_automatica()
     except Exception as exc:
-        if run_id:
-            db.execute("""
-                UPDATE maintenance_runs
-                SET finished_at=?, status='error', detail=?
-                WHERE id=?
-            """, (agora_str(), str(exc), run_id))
-            db.commit()
-        print(f"Erro na retencao automatica: {exc}", flush=True)
-    finally:
-        db.close()
+        log.error("Retencao automatica falhou: %s", exc)
 
 
 def decode_str(s):
@@ -467,10 +365,10 @@ def processar_emails():
 
         if not config:
             finalizar_execucao(db, run_id, "warning", stats, "Configuração de e-mail não encontrada.")
-            print("Configuração de e-mail não encontrada.", flush=True)
+            log.warning("Configuração de e-mail não encontrada.")
             return
 
-        print("\n=== Verificando emails ===", flush=True)
+        log.info("Verificando e-mails")
 
         imap = conectar_imap(config)
         imap.login(config["email_user"], config["email_pass"])
@@ -498,18 +396,12 @@ def processar_emails():
                     stats["ignorados"] += 1
             except Exception:
                 stats["erros"] += 1
-                print(f"Erro ao processar e-mail {eid!r}:", flush=True)
-                traceback.print_exc()
+                log.exception("Erro ao processar e-mail %r", eid)
 
         zammad_resumo = avaliar_alertas(db)
         if zammad_resumo["status"] == "enabled":
-            print(
-                "Zammad: "
-                f"{zammad_resumo['success']} chamados, "
-                f"{zammad_resumo['duplicate']} duplicados, "
-                f"{zammad_resumo['error']} erros de envio.",
-                flush=True,
-            )
+            log.info("Zammad: %s chamados, %s duplicados, %s erros de envio.",
+                     zammad_resumo["success"], zammad_resumo["duplicate"], zammad_resumo["error"])
 
         detalhe = (
             f"Busca desde {desde_imap}: {stats['encontrados']} e-mails, "
@@ -518,7 +410,7 @@ def processar_emails():
         )
         status_final = "error" if stats["erros"] else "success"
         finalizar_execucao(db, run_id, status_final, stats, detalhe)
-        print(detalhe, flush=True)
+        log.info(detalhe)
     except Exception as e:
         finalizar_execucao(db, run_id, "error", stats, str(e))
         raise
@@ -535,6 +427,21 @@ def relatorios_semanais():
     db = get_db()
     try:
         run_due_weekly_reports(db)
+    finally:
+        db.close()
+
+
+def registrar_tarefa(tarefa):
+    """Guarda o estado da tarefa para a tela /status (ver app/monitoramento.tarefas_do_worker)."""
+    db = get_db()
+    try:
+        db.execute("""
+            INSERT INTO worker_tarefas (nome, intervalo_s, ciclos, erros, ultimo_ciclo_em, ultimo_erro_em, ultimo_erro)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (nome) DO UPDATE SET intervalo_s=excluded.intervalo_s, ciclos=excluded.ciclos, erros=excluded.erros,
+                ultimo_ciclo_em=excluded.ultimo_ciclo_em, ultimo_erro_em=excluded.ultimo_erro_em, ultimo_erro=excluded.ultimo_erro
+        """, (tarefa.nome, tarefa.intervalo_s, tarefa.ciclos, tarefa.erros, tarefa.ultimo_ciclo_em, tarefa.ultimo_erro_em, tarefa.ultimo_erro))
+        db.commit()
     finally:
         db.close()
 
@@ -557,5 +464,5 @@ def montar_tarefas():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(threadName)s: %(message)s", stream=sys.stdout)
     tarefas = montar_tarefas()
-    _, parar = iniciar(tarefas)
+    _, parar = iniciar(tarefas, registrar=registrar_tarefa)
     vigiar(tarefas, parar)

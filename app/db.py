@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import threading
+from datetime import datetime
 from pathlib import Path
 from werkzeug.security import generate_password_hash
 
@@ -68,7 +69,7 @@ def _translate_sql(sql):
 
 
 # Tabelas com chave composta e SEM coluna id: nao ha sequencia, entao SELECT LASTVAL() falharia e abortaria a transacao no Postgres.
-TABELAS_SEM_ID = {"pfsense_traffic_hourly"}
+TABELAS_SEM_ID = {"pfsense_traffic_hourly", "schema_migrations", "worker_tarefas"}
 
 
 def _insert_uses_default_id(sql):
@@ -256,6 +257,44 @@ def init_db():
     # o worker chama isto de varias threads (cada tarefa no seu laco): o DDL nunca roda em paralelo no mesmo processo
     with _INIT_LOCK:
         _criar_esquema()
+        aplicar_migracoes()
+
+
+# Mudancas NOVAS de esquema ou de dados entram aqui, numeradas e em ordem; cada uma roda uma unica vez por banco.
+# _criar_esquema continua sendo a base (idempotente). Formato: (versao, "descricao", funcao(cur)).
+def _migracao_worker_tarefas(cur):
+    # estado de cada tarefa do worker (worker/agenda.py), para a tela de saude mostrar quem parou ou esta falhando
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS worker_tarefas (
+            nome TEXT PRIMARY KEY,
+            intervalo_s INTEGER,
+            ciclos INTEGER DEFAULT 0,
+            erros INTEGER DEFAULT 0,
+            ultimo_ciclo_em TEXT,
+            ultimo_erro_em TEXT,
+            ultimo_erro TEXT
+        )
+    """)
+
+
+MIGRACOES = [(1, "tabela worker_tarefas (saude das tarefas do worker)", _migracao_worker_tarefas)]
+
+
+def aplicar_migracoes(migracoes=None):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS schema_migrations (versao INTEGER PRIMARY KEY, descricao TEXT, aplicada_em TEXT)")
+        feitas = {r[0] for r in cur.execute("SELECT versao FROM schema_migrations").fetchall()}
+        for versao, descricao, funcao in sorted(MIGRACOES if migracoes is None else migracoes, key=lambda m: m[0]):
+            if versao in feitas:
+                continue
+            funcao(cur)
+            cur.execute("INSERT INTO schema_migrations (versao, descricao, aplicada_em) VALUES (?, ?, ?)",
+                        (versao, descricao, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()  # uma por vez: se a seguinte falhar, esta fica registrada
+    finally:
+        conn.close()
 
 
 def _criar_esquema():

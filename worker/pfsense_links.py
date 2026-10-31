@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import re
 import shlex
 import xml.etree.ElementTree as ET
@@ -12,6 +13,7 @@ except ImportError:
     from worker.pfsense_agent import connect_firewall, read_config, run_shell
 
 
+log = logging.getLogger("worker")
 DEVICE_RE = re.compile(r"[A-Za-z0-9_.:-]+")
 PROBE_TARGET = "1.1.1.1"
 
@@ -267,7 +269,7 @@ def run_due_link_tests():
             result = run_link_speedtest(link, firewall)
             results.append((link["id"], "speedtest", result["status"]))
     if results:
-        print(f"pfSense links: {results}", flush=True)
+        log.info("pfSense links: %s", results)
     return results
 
 
@@ -292,5 +294,5 @@ def run_requested_link_tests():
         if link["speedtest_requested_at"]:
             results.append((link["id"], "speedtest", run_link_speedtest(link, firewall)["status"]))
     if results:
-        print(f"pfSense requested jobs: {results}", flush=True)
+        log.info("pfSense requested jobs: %s", results)
     return results
