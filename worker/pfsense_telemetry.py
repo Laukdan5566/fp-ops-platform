@@ -329,8 +329,8 @@ def coletar_firewall(firewall, agora_utc=None):
     db = get_db()
     try:
         novos = gravar(db, firewall["id"], redes, info, gateways_preferenciais(info), trafego, eventos, agora.strftime("%Y-%m-%d %H:%M:%S"), bloqueios)
-        db.execute("UPDATE pfsense_firewalls SET telemetry_at=?, telemetry_error=NULL, telemetry_info=? WHERE id=?",
-                   (agora.strftime("%Y-%m-%d %H:%M:%S"), json.dumps(diagnostico, ensure_ascii=False), firewall["id"]))
+        db.execute("UPDATE pfsense_firewalls SET telemetry_at=?, telemetry_ok_at=?, telemetry_error=NULL, telemetry_info=? WHERE id=?",
+                   (agora.strftime("%Y-%m-%d %H:%M:%S"), agora.strftime("%Y-%m-%d %H:%M:%S"), json.dumps(diagnostico, ensure_ascii=False), firewall["id"]))
         db.commit()
     finally:
         db.close()
